@@ -18,3 +18,5 @@ Compile commands can be found in the C source files; no Makefile usage.
 
 WARNING
 build.c is no longer in use and is replaced by build.md
+
+## end
