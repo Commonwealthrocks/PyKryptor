@@ -113,8 +113,13 @@ With that, do not mix up **Nonce** and **Salt**, **Nonce** gives actual data in 
 ### Authenticated tag
 `GCM` as said earlier gives files a tag that helps detect tampering in other software. This adds another layer of "Fuck me..." when trying to crack a file that uses **AES-256-GCM**. Same case with `Poly1305`; just for **ChaCha20**.
 
+### Archive mode
+**PyKryptor** has a built in archive mode which instead of using `tarfile` like a sane person it uses it's own format to fit seamlessly with the encryption and compression for the app.
+
+The newest format is `v1.5` also makes check for **RAM exhaustion** and **TOCTOU** attacks; while keeping the metdata of your files encrypted like in past versions.
+
 ### Compression (optional)
-While I might know a bit about `cryptography` itself when it comes to compression... but hey that's why we use trusted Python libraries like `zlib`, `zstd` and `lzma` (`lzma` is mostly deprecated in **PyKryptor**). With this you can expect *very good* compression rates, not **WinRAR** or **7-zip** level cause those are dedicated compression tools; either way **PyKryptor's** rates are still very good.
+While I might know a bit about `cryptography` itself; when it comes to compression, yeah no chief... but hey that's why we use trusted **Python** libraries like `zlib`, `zstd` and `lzma` (`lzma` is mostly deprecated in **PyKryptor**). With this you can expect *very good* compression rates, not **WinRAR** or **7-zip** level cause those are dedicated compression tools; either way **PyKryptor's** rates are still very good.
 
 ### Reedsolo (optional)
 If you're ever *VERY* paranoid about bit rot (error misshaps) that can occur in files, **Reedsolo** is exactly what stops that. Now **Reedsolo** does NOT help making files more secure, only there to ease true paranoia and it will increase processing time and is slow as **Rust's** compiler. I myself don't recommend it for most use cases.
@@ -175,6 +180,9 @@ And *voila*, how to use **PyKryptor** done simple.
 
 - **Chunk size: PyKryptor will process chunks in whatever number is chosen to prevent overly heavy RAM usage or disk usage, default and recommended in 3-5MB. For the lord's sake do not mess with THIS feature.**
 
+### Settings - `USB-codec` tab
+- **Setup USB-codec: USB-codec is a new release for PyKryptor `v1.5` that can utilize a USB as a secondary key needed for decryption / encryption. That means even if your password is REALLY weak USB-codec will save your files!**
+
 ## *"What about the FAQ?!?!"*
 Yes yes. I hear you...
 
@@ -207,65 +215,14 @@ Well, in theory yes'nt. But from my view I won't encourage it, but you have free
 ### *"Is this spyware?"*
 There is a lingering joke about **PyKryptor** however if you think that; review every commit and the code too for you to see yourself.
 
+If I'd be trying to spy on you the evidence would be *SOMEWHERE* in the code lmao.
+
 ### *"What happended to **PyLI**?"*
 In short, rename from **PyLI** to **PyKryptor** since **PyLI** sounds like a knockoff version of `PyNaCl`, at the core they are the same app.
 
 ### *"I use Arch btw."*
 I'll assume you're asking for the CLI mode... well uh, oh boy!
 
-Yeah the CLI mode for now is very borked and un--tested, that's a fault on MY end and I am planning to fix it in the near future.
+Yeah the CLI... exists! It's just undocumented; only a small help command. I don't really bother testing it too.
 
 ### End of `docs.md`
-
-# **PyKryptor build information**
-### Warning
-This build version is for **PyKryptor** version `v1.4`
-
-## *"Where do I get the source code?"*
-From the releases tab you can get the source code for version `v1.4` or any older version. If you want the best support and UX, choose the **LATEST** version and download the `.zip` file.
-
-The password for the `.zip` file(s) is; `PyKryptor`, use a tool like **WinRAR**, **7-zip** or **WinZip (built in)** to extract it.
-
-## *"Right... but what do I need for this?"*
-
-### Python 3.12
-To compile **PyKryptor**, you'll need at least **Python `3.10+`** (tested on `3.12`). If you are using `MSVC` as your C compiler; you can use **Python** `3.13`, otherwise you must use either `3.12` for `GCC` or `Clang` as your compiler.
-
-#### [Python 3.12 download page](https://www.python.org/downloads/release/python-3120/)
-
-### Python libraries
-Simply run this somewhere in your terminal WITH **pip** and **Python** both in your PATH.
-```bash
-pip install numpy pyside6 cryptography colorama pygame reedsolo zstandard argon2-cffi nuitka
-```
-
-There 100% is NOT a `requirements.txt` in there so sorry :)
-
-## *"What about the C libraries?"*
-Both C libraries (in `v1.4`) are ALREADY compiled both for **Windows** and **Linux**. **macOS** is still lacking since I cannot bother getting a darwin--toolchain SDK nor a compiler.
-
-## *"Right... now how do I build it?"*
-
-### GCC Nuitka (Linux / Windows)
-```bash
-nuitka --standalone --windows-icon-from-ico=pykryptor_icon.ico --mingw64 --windows-console-mode=disable --onefile --enable-plugin=pyside6 --include-data-dir=txts=txts --include-data-dir=sfx=sfx --include-data-dir=img=img --include-data-files=c/win32/secure_mem.dll=c/32/secure_mem.dll --include-data-files=c/penguin/secure_mem.so=c/penguin/secure_mem.so --include-data-files=c/win32/chc_aes_ni.dll=c/win32/chc_aes_ni.dll --include-data-files=c/penguin/chc_aes_ni.so=c/penguin/chc_aes_ni.so gui.py
-```
-Run this in the root of the project; aka where you'll find `gui.py` in a terminal.
-
-### MSVC Nuitka (Windows)
-```bash
-nuitka --standalone --windows-icon-from-ico=pykryptor_icon.ico --windows-console-mode=disable --onefile --enable-plugin=pyside6 --include-data-dir=txts=txts --include-data-dir=sfx=sfx --include-data-dir=img=img --include-data-files=c/win32/secure_mem.dll=c/win32/secure_mem.dll --include-data-files=c/penguin/secure_mem.so=c/penguin/secure_mem.so --include-data-files=c/win32/chc_aes_ni.dll=c/win32/chc_aes_ni.dll --include-data-files=c/penguin/chc_aes_ni.so=c/penguin/chc_aes_ni.so gui.py
-```
-Same step, run it in the root; this one here is **Windows** only.
-
-### When done
-When it's done building, you should get the `gui.exe`, which you can rename to `PyKryptor.exe`. And voila! You have **PyKryptor**; use for your needs.
-
-## *"I got [insert_error]!!! 😔"*
-Now it all depends on your error, but the most common issues are only having `GCC` or `Clang` but a higher version of **Python** `3.12`; use **MSVC** if you have `3.13`.
-
-Another issue could be **macOS** in general... God I hate that OS but yeah, **PyKryptor** is meant for **Windows** mostly, stuff like **Linux** or **macOS** is a best effort from my end.
-
-Or an issue could be missing deps... which in that case read these fucking instructions once more.
-
-### End of `build_info.md`
