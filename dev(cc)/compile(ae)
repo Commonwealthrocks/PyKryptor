@@ -1,8 +1,0 @@
-## PyKryptor/dev(cc) - compile(ae)
-
-COMPILE /W NUITKA (needs Python 3.12)
-[GCC] $ nuitka --standalone --windows-icon-from-ico=pykryptor_icon.ico --jobs=4 --windows-console-mode=disable --onefile --mingw64 --enable-plugin=pyside6 --include-data-dir=txts=txts --include-data-dir=sfx=sfx --include-data-dir=img=img --include-data-files=c/win32/secure_mem.dll=c/win32/secure_mem.dll --include-data-files=c/penguin/secure_mem.so=c/penguin/secure_mem.so gui.py
-[MSVC] $ nuitka --standalone --windows-icon-from-ico=pykryptor_icon.ico --jobs=4 --windows-console-mode=disable --onefile --enable-plugin=pyside6 --include-data-dir=txts=txts --include-data-dir=sfx=sfx --include-data-dir=img=img --include-data-files=c/win32/secure_mem.dll=c/win32/secure_mem.dll --include-data-files=c/penguin/secure_mem.so=c/penguin/secure_mem.so gui.py
-
-LIBS (needs Python and pip in PATH)
-pip install numpy pyside6 cryptography pygame reedsolo zstandard pyzstd argon2-cffi
