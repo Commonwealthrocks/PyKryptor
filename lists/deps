@@ -1,0 +1,31 @@
+## PyKryptor/lists - deps
+
+DEP VERSIONS:
+numpy
+>>> 2.3.5
+
+cryptography
+>>> 46.0.3
+
+argon2-cffi
+>>> 25.1.0
+
+colorama
+>>> 0.4.6
+
+pyside6
+>>> 6.10.0
+
+reedsolo
+>>> 1.7.0
+
+zstandard
+>>> 0.25.0
+
+pyzstd
+>>> 0.18.0
+
+zxcvbn
+>>> 4.5.0
+
+## end
