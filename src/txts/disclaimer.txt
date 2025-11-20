@@ -1,40 +1,73 @@
 ## disclaimer.txt
 LEGAL SHIT (because lawyers exist)
 
-This software is provided "AS IS", meaning if it breaks, you get to keep both pieces.
-Use it however the hell you want, but don't come crying to me if:
+This software is provided "AS IS", meaning if it breaks, you get to keep
+both pieces.
 
+Use it however the hell you want, but don't come crying to me if:
 - Your files get corrupted.
+
 - Your computer catches fire (though that's probably unrelated).
+
 - You forget your password, this is strong crypto we are talking about.
-- You edit the encrypted files, the authentication tag will not take that nicely.
+
+- You edit the encrypted files, the authentication tag will not take
+  that nicely.
+  
 - Your cat walks across the keyboard and corrupts something.
+
 - Your keyboard walks across the cat and corrupts something (what?).
+
 - The software decides to derp mid encryption, unlikely.
-- You accidentally encrypt your entire C:\ drive (trust me it's possible if you try hard enough).
+
+- You accidentally encrypt your entire C:\ drive (trust me it's possible if
+  you try hard enough).
+  
 - Your files get possessed.
-- The heat death of the universe occurs while processing (also unlikely of happening tho).
+
+- The heat death of the universe occurs while processing (also unlikely
+  of happening tho).
 
 By using this software, you acknowledge that:
 - You're a competent human being who can handle consequences.
+
 - The developer (yes, me) isn't your personal IT support.
-- Strong encryption means REALLY STRONG, no backsies if you lose the key.
+
+- Strong encryption means REALLY STRONG, no backsies if you lose
+  the key.
+  
 - If you're using this for illegal stuff, be my guest. But I won't be your's.
-- Reading this disclaimer means you actually care about legal stuff (weird flex but ok).
+
+- Reading this disclaimer means you actually care about legal stuff
+  (weird flex but ok).
+  
 - The laws of physics still apply, unfortunately.
 
 IMPORTANT CRYPTO NOTES:
-- AES-256-GCM and ChaCha20-Poly1305 are no joke. Forget your password and your data is gone unless you specialize in this kinda shit.
-- This uses proper key derivation (Argon2ID or PBKDF2 with 1,000,000 iterations as default).
+- AES-256-GCM and ChaCha20-Poly1305 are no joke. Forget your
+  password and your data is gone unless you specialize in
+  this kinda shit.
+  
+- This uses proper key derivation (Argon2ID or PBKDF2 with
+  1,000,000 iterations as default).
+  
 - Your encrypted files are YOUR responsibility.
-- If you're paranoid about losing your files, keep your original files elsewhere then.
-- I'm not a cybersecurity expert, but on the bright side I'm not using Base64...
+
+- If you're paranoid about losing your files, keep your original
+  files elsewhere then.
+  
+- I'm not a cybersecurity expert, but on the bright side I'm not
+  using Base64...
  
 TECHNICAL DISCLAIMERS:
 - Not tested on quantum computers (yet).
+
 - May not work properly during solar flares.
-- Performance may vary based on your hamster wheel setup.
+
+- Performance may vary based on your dusty ass setup.
+
 - Side effects may include: increased paranoia about file security.
+
 - Not compatible with time travel (trust me, I tried).
 
 Bottom line: Use this with caution, perhaps got a concern or bug?

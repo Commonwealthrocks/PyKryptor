@@ -22,7 +22,7 @@ Auto skip: already compressed formats (jpg, mp4, etc.)
 FILE FORMAT STRUCTURE (v9):
 Magic number: "PYKX\x00" (5 bytes)
 Legacy magic number: "PYLI\x00" (5 bytes)
-Format version: 9 (1 byte)
+Format version: 10 (1 byte)
 AEAD Algorithm ID: 1=AES-GCM, 2=ChaCha20 (1 byte)
 Flags: recovery data, archive mode (1 byte)
 KDF ID: 1=PBKDF2, 2=Argon2ID (1 byte)
@@ -50,6 +50,7 @@ Password never stored, only derived key used.
 Memory cleared after key derivation to best effort (C library if available).
 Reed-Solomon error correction optional (32 bytes per chunk).
 AES-NI detection to recommend the fastest AEAD for your CPU.
+ChaCha20-Poly1305 could be replaced with XChaCha20-Poly1305; only possible with PyNaCl.
 
 PERFORMANCE:
 Multi-threaded GUI (crypto runs in background).
@@ -60,13 +61,13 @@ Memory efficient chunked processing.
 
 BUILD INFO:
 Language: Python 3.12 and C
-GUI framework: PySide6 (QtFramework)
+GUI framework: PySide6 (QtFramework6)
 Crypto library: cryptography (Rust / C based)
 Compression: zlib, zstandard, lzma
 Compiler: Nuitka (when distributed)
 Platform: Windows based, Linux / macOS untested
-Build version: 0-3-1-1-2-0-2-5
-Version: 1.4
+Build version: 1-2-1-1-2-0-2-5
+Version: 1.5
 
 KNOWN LIMITATIONS:
 No file shredding after encryption.

@@ -2,7 +2,7 @@
 ## scroll down for latest version
 CHANGELOGS
 
-PYLI
+## PYLI
 
 VERSION 0.1a - 20.08.2025 <d/m/y>
 [PRIVATE BUILD]
@@ -31,7 +31,7 @@ VERSION 0.3a - 26.08.2025 <d/m/y>
 [PUBLIC BUILD]
 - Re-worked settings tab
 - Minor GUI re-work
-- Fixed information error in `disclaimer.txt`
+- Fixed information error in disclaimer.txt
 - Added advanced preformance settings
 - Added adjustable KDF iteration
 - Added adjustable chunk size (MB)
@@ -41,27 +41,32 @@ VERSION 0.4a - 28.08.2025 <d/m/y>
 [PUBLIC BUILD]
 - Re-worked settings tab (advanced settings)
 - Fixed minor QThread and threading issues
-- Fixed typo in `disclaimer.txt` (100,000,000 >>> 1,000,000)
+- Fixed typo in disclaimer.txt
+  (100,000,000 >>> 1,000,000)
 - Added CLI support
 - Added partial data integrity
-- Added secure memory wiping for Windows with C (unsure if works for Linux or MacOS)
-- Added safety measure for already encrypted (PyLI) file(s)
+- Added secure memory wiping for Windows with C
+  (does not work with macOS)
+- Added safety measure for already encrypted
+  (PyLI) file(s)
 
 VERSION 0.5a - 02.09.2025 <d/m/y>
 [PUBLIC BUILD]
 - Improved error handling for batch processes
 - Added compression with zlib and lzma
 - Added debug console (alt + 0, Administrator needed)
-- "Fixed" drag n' drop breaking when running as Administrator
+- "Fixed" drag n' drop breaking when running as
+  Administrator
 - Fixed compression to stay consistent across chunks
 - Fixed KDF interchange issue
-- Fixed base64 filenames to use safe chars and avoid PATH length drama
+- Fixed base64 filenames to use safe chars and avoid
+  PATH length drama
 - Fixed minor KeyError
 - Fixed minor mismatch in CLI version
 
 VERSION 0.6a - 05.09.2025 <d/m/y>
 [PUBLIC BUILD]
-- Added `ULTRAKILL` compression
+- Added ULTRAKILL compression
 - Added archive mode
 - Re-worked the GUI slightly in the settings tab
 - Fixed sfx sometimes not muting
@@ -71,12 +76,14 @@ VERSION 0.6a - 05.09.2025 <d/m/y>
 VERSION 0.7a - 09.09.2025 <d/m/y>
 [PUBLIC BUILD]
 - Fixed archive mode not including sub-folders
-- Fixed archive mode not adding files first to the sector
-- Fixed compression frame header errors during decryption
+- Fixed archive mode not adding files first to
+  the sector
+- Fixed compression frame header errors during
+  decryption
 - Fixed secure boot sometimes breaking the app
 - Added zstandard for compression
 - Removed most lzma methods
-- Kept legacy `ULTRAKILL` compression with lzma
+- Kept legacy ULTRAKILL compression with lzma
 
 VERSION 0.8a - 11.09.2025 <d/m/y>
 [PUBLIC BUILD]
@@ -90,7 +97,8 @@ VERSION 0.9a - 15.09.2025 <d/m/y>
 - Added mmap
 - Added multi-threading
 - Re-worked C code for secure clearing
-- Removed macOS support for secure memory clearing due to not having a darwin--toolchain
+- Removed macOS support for secure memory clearing due
+  to not having a darwin--toolchain
 
 VERSION 1.0 - 18.09.2025 <d/m/y>
 [PUBLIC BUILD]
@@ -107,9 +115,12 @@ VERSION 1.1 - 11.10.2025 <d/m/y>
 - Fixed admin console not being able to be closed (esc)
 - Added streamed archive adding
 - Added slight progress updates when making an archive
-- Added garbage collection (periodic); to help with big files
-- Added secure safe for safe memory handling (best effort)
-- Added hide (H) and show (S) password option in main tab
+- Added garbage collection (periodic); to help with
+  big files
+- Added secure safe for safer memory handling
+  (best effort)
+- Added hide (H) and show (S) password option in
+  the main tab
 - Added password scoring with zxcvbn
 
 VERSION 1.2 - 14.10.2025 <d/m/y>
@@ -129,9 +140,9 @@ VERSION 1.3 - 17.10.2025 <d/m/y>
 - Added AD (Associated Data) for full file header
 - Added more files to compressions skip list
 
-PYKRYPTOR
+## PYKRYPTOR
 
-VERSION 1.4 - 02.11.2025 <d/m/y> [LATEST]
+VERSION 1.4 - 02.11.2025 <d/m/y>
 - Added archive creation tab
 - Added new icon (for AC)
 - Added new icons for archive creation
@@ -140,6 +151,19 @@ VERSION 1.4 - 02.11.2025 <d/m/y> [LATEST]
 - Fixed keep name not being kept
 - Changed default setting (Argon2ID)
 - Changed name from PyLI to PyKryptor
+
+VERSION 1.5 - 19.11.2025 <d/m/y> [LATEST]
+- Fixed archives using pathreal() to avoid TOCTOU
+  attacks
+- Fixed memory exhaustion with header; disallow crashes
+- Fixed up and updated the CLIState
+- Added drag n' drop for archive creation tab
+- Added new icons
+- Added new icon for archive creation
+- Added build.md
+- Added USB-codec mode
+- Re-organized code for compiling
+- Removed build.c
 
 That's all for now :)
 
