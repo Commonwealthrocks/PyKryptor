@@ -40,20 +40,20 @@ Briefly mentioned this but we shall go over it once more quickly.
 
 ### Windows (win32)
 ```bash
-gcc -shared -o win32/chc_aes_ni.dll c/chc_aes_ni.c -O2 -Wall -fvisibility=hidden -fno-strict-aliasing -fno-lto -static-libgcc -static-libstdc++
+gcc -shared -o assets/c/win32/chc_aes_ni.dll assets/c/chc_aes_ni.c -O2 -Wall -fvisibility=hidden -fno-strict-aliasing -fno-lto -static-libgcc -static-libstdc++
 ```
 ```bash
-gcc -shared -o win32/secure_mem.dll c/secure_mem.c -O2 -Wall -fvisibility=hidden -fno-strict-aliasing -fno-lto -static-libgcc -static-libstdc++
+gcc -shared -o assets/c/win32/secure_mem.dll assets/c/secure_mem.c -O2 -Wall -fvisibility=hidden -fno-strict-aliasing -fno-lto -static-libgcc -static-libstdc++
 ```
 
 Both of the files are needed to be compiled and this will work as long as you have `gcc.exe` in your systems PATH or use something like **UCRT64** that relies on `gcc.exe`.
 
 ### Linux (penguin)
 ```bash
-gcc -shared -fPIC -o penguin/chc_aes_ni.so c/chc_aes_ni.c -O2 -Wall -fvisibility=hidden -fno-strict-aliasing -fno-lto
+gcc -shared -fPIC -o assets/c/penguin/chc_aes_ni.so assets/c/chc_aes_ni.c -O2 -Wall -fvisibility=hidden -fno-strict-aliasing -fno-lto
 ```
 ```bash
-gcc -shared -fPIC -o penguin/secure_mem.so c/secure_mem.c -O2 -Wall -fvisibility=hidden -fno-strict-aliasing -fno-lto
+gcc -shared -fPIC -o assets/c/penguin/secure_mem.so assets/c/secure_mem.c -O2 -Wall -fvisibility=hidden -fno-strict-aliasing -fno-lto
 ```
 
 Same case here; needs `gcc.exe` in PATH or use something like **MinGW64**.
@@ -67,19 +67,19 @@ Now for this it will again depend on your OS but I'll give a quick run down of t
 
 ### **GCC (Windows)**
 ```bash
-nuitka --standalone --jobs=6 --windows-icon-from-ico=pykryptor_icon.ico --mingw64 --windows-console-mode=disable --onefile --enable-plugin=pyside6 --include-data-dir=txts=txts --include-data-dir=sfx=sfx --include-data-dir=img=img --include-data-files=c/win32/secure_mem.dll=c/win32/secure_mem.dll --include-data-files=c/win32/chc_aes_ni.dll=c/win32/chc_aes_ni.dll --include-data-files=c/penguin/secure_mem.so=c/penguin/secure_mem.so --include-data-files=c/penguin/chc_aes_ni.so=c/penguin/chc_aes_ni.so py/gui.py
+nuitka --standalone --onefile --jobs=6 --mingw64 --windows-console-mode=disable --windows-icon-from-ico=pykryptor_icon.ico --enable-plugin=pyside6 --include-data-dir=img=img --include-data-dir=txts=txts --include-data-dir=sfx=sfx --include-data-files=sfx/*.wav=sfx/ --include-data-files=c/win32/*.dll=c/win32/ --include-data-files=c/penguin/*.so=c/penguin/ py/gui.py
 ```
 This here will use **GCC** to turn our **Python** based app into a `.exe` file for **Windows**.
 
 ### **MSVC (Windows)**
 ```bash
-nuitka --standalone --jobs=6 --windows-icon-from-ico=pykryptor_icon.ico --windows-console-mode=disable --onefile --enable-plugin=pyside6 --include-data-dir=txts=txts --include-data-dir=sfx=sfx --include-data-dir=img=img --include-data-files=c/win32/secure_mem.dll=c/win32/secure_mem.dll --include-data-files=c/win32/chc_aes_ni.dll=c/win32/chc_aes_ni.dll --include-data-files=c/penguin/secure_mem.so=c/penguin/secure_mem.so --include-data-files=c/penguin/chc_aes_ni.so=c/penguin/chc_aes_ni.so py/gui.py
+nuitka --standalone --onefile --jobs=6 --windows-console-mode=disable --windows-icon-from-ico=pykryptor_icon.ico --enable-plugin=pyside6 --include-data-dir=img=img --include-data-dir=txts=txts --include-data-dir=sfx=sfx --include-data-files=sfx/*.wav=sfx/ --include-data-files=c/win32/*.dll=c/win32/ --include-data-files=c/penguin/*.so=c/penguin/ py/gui.py
 ```
 Same idea as **GCC** but for **MSVC** to be used instead we remove the `--mingw64` flag in the compile command.
 
 ### **GCC (Linux)**
 ```bash
-nuitka --standalone --jobs=6 --onefile --enable-plugin=pyside6 --include-data-dir=txts=txts --include-data-dir=sfx=sfx --include-data-dir=img=img --include-data-files=c/penguin/secure_mem.so=c/penguin/secure_mem.so --include-data-files=c/penguin/chc_aes_ni.so=c/penguin/chc_aes_ni.so py/gui.py
+nuitka --standalone --onefile --jobs=$(nproc) --enable-plugin=pyside6 --include-data-dir=img=img --include-data-dir=txts=txts --include-data-dir=sfx=sfx --include-data-files=sfx/*.wav=sfx/ --include-data-files=c/penguin/*.so=c/penguin/ py/gui.py
 ```
 This compile command is only for **Linux** and will compile the Python code to `ELF` based file for running.
 
