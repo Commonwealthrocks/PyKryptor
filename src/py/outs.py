@@ -1,7 +1,10 @@
 ## outs.py
-## last updated: 19/11/2025 <d/m/y>
+## last updated: 21/11/2025 <d/m/y>
 ## p-y-k-x
 import os
+import tempfile
+import struct
+import glob
 import ctypes
 import sys
 import re
@@ -25,11 +28,54 @@ except ImportError:
     USB_CODEC_AVAILABLE = False
 
 def get_resource_path(relative_path):
+    candidates = []
     if getattr(sys, "frozen", False):
-        base_path = sys._MEIPASS
-    else:
-        base_path = os.path.dirname(os.path.abspath(__file__))
-    return os.path.join(base_path, relative_path)
+        if hasattr(sys, "_MEIPASS"):
+            candidates.append(sys._MEIPASS)
+        nuitka_temp = os.environ.get("NUITKA_ONEFILE_TEMP")
+        if nuitka_temp:
+            candidates.append(nuitka_temp)
+        try:
+            candidates.append(os.path.dirname(sys.executable))
+        except Exception:
+            pass
+        try:
+            candidates.append(os.path.dirname(os.path.abspath(sys.argv[0])))
+        except Exception:
+            pass
+        try:
+            candidates.append(tempfile.gettempdir())
+        except Exception:
+            pass
+        candidates.extend([os.environ.get("TEMP"), os.environ.get("TMP")])
+    candidates.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+    candidates.append(os.getcwd())
+    tried = []
+    first_seg = relative_path.split(os.sep)[0]
+    for base in candidates:
+        if not base:
+            continue
+        candidate_path = os.path.join(base, relative_path)
+        tried.append(candidate_path)
+        if os.path.exists(candidate_path):
+            return candidate_path
+        if os.sep in relative_path:
+            alt = os.path.join(base, first_seg, *relative_path.split(os.sep)[1:])
+            tried.append(alt)
+            if os.path.exists(alt):
+                return alt
+    try:
+        tempdir = tempfile.gettempdir()
+        pattern = os.path.join(tempdir, "**", first_seg)
+        for match in glob.glob(pattern, recursive=True):
+            if os.path.isdir(match):
+                candidate = os.path.join(match, *relative_path.split(os.sep)[1:]) if os.sep in relative_path else os.path.join(match, relative_path)
+                tried.append(candidate)
+                if os.path.exists(candidate):
+                    return candidate
+    except Exception:
+        pass
+    raise FileNotFoundError("Resource not found: {!r}. Tried:\n{}".format(relative_path, "\n".join(tried)))
 
 def enable_win_dark_mode(widget):
     if sys.platform == "win32":
@@ -64,7 +110,7 @@ class CustomDialog(QDialog):
         self.message_text.setReadOnly(True)
         layout.addWidget(self.message_text)
         self.ok_button = QPushButton("OK")
-        icon_path = get_resource_path(os.path.join("..", "img", "continue_img.png"))
+        icon_path = get_resource_path(os.path.join("img", "continue_img.png"))
         self.ok_button.setIcon(QIcon(icon_path))
         self.ok_button.clicked.connect(self.accept)
         layout.addWidget(self.ok_button)
@@ -88,7 +134,7 @@ class ArchiveCreationDialog(QDialog):
         self.archive_name_field.setPlaceholderText("archive.dat")
         self.archive_name_field.setText(self.current_settings.get("archive_name", "archive.dat"))
         self.browse_output_button = QPushButton()
-        icon_path = get_resource_path(os.path.join("..", "img", "browse_img.png"))
+        icon_path = get_resource_path(os.path.join("img", "browse_img.png"))
         self.browse_output_button.setIcon(QIcon(icon_path))
         self.browse_output_button.setToolTip("Browse for output location")
         self.browse_output_button.setFixedSize(40, 25)
@@ -111,19 +157,19 @@ class ArchiveCreationDialog(QDialog):
         self.files_list.setMaximumHeight(120)
         files_button_layout = QHBoxLayout()
         self.add_files_button = QPushButton("Add files")
-        icon_path = get_resource_path(os.path.join("..", "img", "add_files_img.png"))
+        icon_path = get_resource_path(os.path.join("img", "add_files_img.png"))
         self.add_files_button.setIcon(QIcon(icon_path))
         self.add_files_button.clicked.connect(self.add_files)
         self.add_folder_button = QPushButton("Add folder")
-        icon_path = get_resource_path(os.path.join("..", "img", "add_folder_img.png"))
+        icon_path = get_resource_path(os.path.join("img", "add_folder_img.png"))
         self.add_folder_button.setIcon(QIcon(icon_path))
         self.add_folder_button.clicked.connect(self.add_folder)
         self.remove_files_button = QPushButton("Remove selected")
-        icon_path = get_resource_path(os.path.join("..", "img", "remove_selected_img.png"))
+        icon_path = get_resource_path(os.path.join("img", "remove_selected_img.png"))
         self.remove_files_button.setIcon(QIcon(icon_path))
         self.remove_files_button.clicked.connect(self.remove_selected)
         self.clear_files_button = QPushButton("Clear all")
-        icon_path = get_resource_path(os.path.join("..", "img", "remove_all_img.png"))
+        icon_path = get_resource_path(os.path.join("img", "remove_all_img.png"))
         self.clear_files_button.setIcon(QIcon(icon_path))
         self.clear_files_button.clicked.connect(self.clear_files)
         files_button_layout.addWidget(self.add_files_button)
@@ -245,7 +291,7 @@ class ArchiveCreationDialog(QDialog):
         self.password_field.setEchoMode(QLineEdit.Password)
         self.password_field.setPlaceholderText("Enter password...")
         self.peek_button = QPushButton()
-        icon_path = get_resource_path(os.path.join("..", "img", "show_pass_img.png"))
+        icon_path = get_resource_path(os.path.join("img", "show_pass_img.png"))
         self.peek_button.setIcon(QIcon(icon_path))
         self.peek_button.setCheckable(True)
         self.peek_button.setFixedSize(50, 25)
@@ -269,11 +315,11 @@ class ArchiveCreationDialog(QDialog):
         password_group.setLayout(password_layout)
         button_layout = QHBoxLayout()
         self.create_button = QPushButton("Create archive")
-        icon_path = get_resource_path(os.path.join("..", "img", "create_archive_img.png"))
+        icon_path = get_resource_path(os.path.join("img", "create_archive_img.png"))
         self.create_button.setIcon(QIcon(icon_path))
         self.create_button.clicked.connect(self.create_archive)
         self.cancel_button = QPushButton("Cancel")
-        icon_path = get_resource_path(os.path.join("..", "img", "cancel_img.png"))
+        icon_path = get_resource_path(os.path.join("img", "cancel_img.png"))
         self.cancel_button.setIcon(QIcon(icon_path))
         self.cancel_button.clicked.connect(self.reject)
         button_layout.addStretch()
@@ -348,12 +394,12 @@ class ArchiveCreationDialog(QDialog):
         if checked:
             self.password_field.setEchoMode(QLineEdit.Normal)
             self.password_confirm_field.setEchoMode(QLineEdit.Normal)
-            icon_path = get_resource_path(os.path.join("..", "img", "hide_pass_img.png"))
+            icon_path = get_resource_path(os.path.join("img", "hide_pass_img.png"))
             self.peek_button.setIcon(QIcon(icon_path))
         else:
             self.password_field.setEchoMode(QLineEdit.Password)
             self.password_confirm_field.setEchoMode(QLineEdit.Password)
-            icon_path = get_resource_path(os.path.join("..", "img", "show_pass_img.png"))
+            icon_path = get_resource_path(os.path.join("img", "show_pass_img.png"))
             self.peek_button.setIcon(QIcon(icon_path))
     
     def update_password_strength(self, password):
@@ -477,11 +523,11 @@ class ErrorExportDialog(QDialog):
         layout.addWidget(self.message_text)
         button_layout = QHBoxLayout()
         self.export_button = QPushButton("Export errors")
-        icon_path = get_resource_path(os.path.join("..", "img", "export_img.png"))
+        icon_path = get_resource_path(os.path.join("img", "export_img.png"))
         self.export_button.setIcon(QIcon(icon_path))
         self.export_button.clicked.connect(self.export_errors)
         self.ok_button = QPushButton("OK")
-        icon_path = get_resource_path(os.path.join("..", "img", "continue_img.png"))
+        icon_path = get_resource_path(os.path.join("img", "continue_img.png"))
         self.ok_button.setIcon(QIcon(icon_path))
         self.ok_button.clicked.connect(self.accept)     
         button_layout.addWidget(self.export_button)
@@ -704,7 +750,7 @@ class USBSetupDialog(QDialog):
         self.usb_list = QListWidget()
         self.usb_list.setMinimumHeight(150)
         refresh_button = QPushButton("Refresh")
-        icon_path = get_resource_path(os.path.join("..", "img", "refresh_img.png"))
+        icon_path = get_resource_path(os.path.join("img", "refresh_img.png"))
         refresh_button.setIcon(QIcon(icon_path))
         refresh_button.clicked.connect(self.refresh_usb_list)
         usb_layout.addWidget(self.usb_list)
@@ -719,11 +765,11 @@ class USBSetupDialog(QDialog):
         self.refresh_usb_list()
         button_layout = QHBoxLayout()
         setup_button = QPushButton("Confirm")
-        icon_path = get_resource_path(os.path.join("..", "img", "confirm_img.png"))
+        icon_path = get_resource_path(os.path.join("img", "confirm_img.png"))
         setup_button.setIcon(QIcon(icon_path))
         setup_button.clicked.connect(self.setup_usb)
         cancel_button = QPushButton("Cancel")
-        icon_path = get_resource_path(os.path.join("..", "img", "cancel_img.png"))
+        icon_path = get_resource_path(os.path.join("img", "cancel_img.png"))
         cancel_button.setIcon(QIcon(icon_path))
         cancel_button.clicked.connect(self.reject)
         button_layout.addStretch()
@@ -749,7 +795,7 @@ class USBSetupDialog(QDialog):
                 if initialized:
                     item.setForeground(QColor("#4A90E2"))
                     try:
-                        icon_path = get_resource_path(os.path.join("..", "img", "usb_img.png"))
+                        icon_path = get_resource_path(os.path.join("img", "usb_img.png"))
                         if os.path.exists(icon_path):
                             item.setIcon(QIcon(icon_path))
                     except:
@@ -802,7 +848,7 @@ class USBSelectionDialog(QDialog):
         self.usb_list = QListWidget()
         self.usb_list.setMinimumHeight(150)
         refresh_button = QPushButton("Refresh")
-        icon_path = get_resource_path(os.path.join("..", "img", "refresh_img.png"))
+        icon_path = get_resource_path(os.path.join("img", "refresh_img.png"))
         refresh_button.setIcon(QIcon(icon_path))
         refresh_button.clicked.connect(self.refresh_usb_list)
         usb_layout.addWidget(self.usb_list)
@@ -817,11 +863,11 @@ class USBSelectionDialog(QDialog):
         self.refresh_usb_list()
         button_layout = QHBoxLayout()
         select_button = QPushButton("Select USB")
-        icon_path = get_resource_path(os.path.join("..", "img", "confirm_img.png"))
+        icon_path = get_resource_path(os.path.join("img", "confirm_img.png"))
         select_button.setIcon(QIcon(icon_path))
         select_button.clicked.connect(self.select_usb)
         cancel_button = QPushButton("Cancel")
-        icon_path = get_resource_path(os.path.join("..", "img", "cancel_img.png"))
+        icon_path = get_resource_path(os.path.join("img", "cancel_img.png"))
         cancel_button.setIcon(QIcon(icon_path))
         cancel_button.clicked.connect(self.reject)
         button_layout.addStretch()
@@ -845,7 +891,7 @@ class USBSelectionDialog(QDialog):
                     item.setData(Qt.ItemDataRole.UserRole, drive)
                     item.setForeground(QColor("#4A90E2"))
                     try:
-                        icon_path = get_resource_path(os.path.join("..", "img", "usb_img.png"))
+                        icon_path = get_resource_path(os.path.join("img", "usb_img.png"))
                         if os.path.exists(icon_path):
                             item.setIcon(QIcon(icon_path))
                     except:

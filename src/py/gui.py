@@ -1,14 +1,12 @@
 ## gui.py
-## last updated: 19/11/2025 <d/m/y>
+## last updated: 21/11/2025 <d/m/y>
 ## p-y-k-x
-## libs: pip install numpy pyside6 cryptography colorama pygame reedsolo zstandard pyzstd argon2-cffi zxcvbn
-## compile (gcc): nuitka --standalone --jobs=4 --windows-icon-from-ico=pykryptor_icon.ico --mingw64 --windows-console-mode=disable --onefile --enable-plugin=pyside6 --include-data-dir=txts=txts --include-data-dir=sfx=sfx --include-data-dir=img=img --include-data-files=c/win32/secure_mem.dll=c/win32/secure_mem.dll --include-data-files=c/penguin/secure_mem.so=c/penguin/secure_mem.so --include-data-files=c/win32/chc_aes_ni.dll=c/win32/chc_aes_ni.dll --include-data-files=c/penguin/chc_aes_ni.so=c/penguin/chc_aes_ni.so py/gui.py
-## compile (msvc): nuitka --standalone --jobs=4 --windows-icon-from-ico=pykryptor_icon.ico --windows-console-mode=disable --onefile --enable-plugin=pyside6 --include-data-dir=txts=txts --include-data-dir=sfx=sfx --include-data-dir=img=img --include-data-files=c/win32/secure_mem.dll=c/win32/secure_mem.dll --include-data-files=c/penguin/secure_mem.so=c/penguin/secure_mem.so --include-data-files=c/win32/chc_aes_ni.dll=c/win32/chc_aes_ni.dll --include-data-files=c/penguin/chc_aes_ni.so=c/penguin/chc_aes_ni.so py/gui.py
-import os
 import sys
+import os
 import ctypes
 import shutil
 import glob
+import tempfile
 import json
 import struct
 from colorama import *
@@ -52,11 +50,54 @@ def rm_pycache():
             print(Fore.RED + f"[DEV PRINT] Failed to remove __pycache__ from '{cache_path}'.\n\ne: {e}" + Style.RESET_ALL)
 
 def get_resource_path(relative_path):
+    candidates = []
     if getattr(sys, "frozen", False):
-        base_path = sys._MEIPASS
-    else:
-        base_path = os.path.dirname(os.path.abspath(__file__))
-    return os.path.join(base_path, relative_path)
+        if hasattr(sys, "_MEIPASS"):
+            candidates.append(sys._MEIPASS)
+        nuitka_temp = os.environ.get("NUITKA_ONEFILE_TEMP")
+        if nuitka_temp:
+            candidates.append(nuitka_temp)
+        try:
+            candidates.append(os.path.dirname(sys.executable))
+        except Exception:
+            pass
+        try:
+            candidates.append(os.path.dirname(os.path.abspath(sys.argv[0])))
+        except Exception:
+            pass
+        try:
+            candidates.append(tempfile.gettempdir())
+        except Exception:
+            pass
+        candidates.extend([os.environ.get("TEMP"), os.environ.get("TMP")])
+    candidates.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+    candidates.append(os.getcwd())
+    tried = []
+    first_seg = relative_path.split(os.sep)[0]
+    for base in candidates:
+        if not base:
+            continue
+        candidate_path = os.path.join(base, relative_path)
+        tried.append(candidate_path)
+        if os.path.exists(candidate_path):
+            return candidate_path
+        if os.sep in relative_path:
+            alt = os.path.join(base, first_seg, *relative_path.split(os.sep)[1:])
+            tried.append(alt)
+            if os.path.exists(alt):
+                return alt
+    try:
+        tempdir = tempfile.gettempdir()
+        pattern = os.path.join(tempdir, "**", first_seg)
+        for match in glob.glob(pattern, recursive=True):
+            if os.path.isdir(match):
+                candidate = os.path.join(match, *relative_path.split(os.sep)[1:]) if os.sep in relative_path else os.path.join(match, relative_path)
+                tried.append(candidate)
+                if os.path.exists(candidate):
+                    return candidate
+    except Exception:
+        pass
+    raise FileNotFoundError("Resource not found: {!r}. Tried:\n{}".format(relative_path, "\n".join(tried)))
 
 def is_admin():
     try:
@@ -242,12 +283,12 @@ class PyKryptor(QWidget):
         self.input_path_field.setPlaceholderText("Drag and drop file(s) or folder here...")
         button_row = QHBoxLayout()
         self.browse_button = QPushButton("Browse")
-        icon_path = get_resource_path(os.path.join("..", "img", "browse_img.png"))
+        icon_path = get_resource_path(os.path.join("img", "browse_img.png"))
         self.browse_button.setIcon(QIcon(icon_path))
         self.browse_button.setIconSize(QSize(20, 20))
         self.browse_button.clicked.connect(self.select_files)
         self.create_archive_button = QPushButton("Create archive")
-        icon_path = get_resource_path(os.path.join("..", "img", "create_archive_img.png"))
+        icon_path = get_resource_path(os.path.join("img", "create_archive_img.png"))
         self.create_archive_button.setIcon(QIcon(icon_path))
         self.create_archive_button.setIconSize(QSize(20, 20))
         self.create_archive_button.clicked.connect(self.open_archive_creation_dialog)
@@ -263,7 +304,7 @@ class PyKryptor(QWidget):
         self.password_field.setEchoMode(QLineEdit.Password)
         self.password_field.setPlaceholderText("Enter password")
         self.peek_button = QPushButton()
-        icon_path = get_resource_path(os.path.join("..", "img", "show_pass_img.png"))
+        icon_path = get_resource_path(os.path.join("img", "show_pass_img.png"))
         self.peek_button.setIcon(QIcon(icon_path))
         self.peek_button.setIconSize(QSize(32, 32))
         self.peek_button.setFixedSize(50, 25)
@@ -319,12 +360,12 @@ class PyKryptor(QWidget):
         password_group.setLayout(password_layout)
         button_layout = QHBoxLayout()
         self.encrypt_button = QPushButton("Encrypt")
-        icon_path = get_resource_path(os.path.join("..", "img", "encrypt_img.png"))
+        icon_path = get_resource_path(os.path.join("img", "encrypt_img.png"))
         self.encrypt_button.setIcon(QIcon(icon_path))
         self.encrypt_button.setIconSize(QSize(20, 20))
         self.encrypt_button.clicked.connect(lambda: self.start_operation("encrypt"))
         self.decrypt_button = QPushButton("Decrypt")
-        icon_path = get_resource_path(os.path.join("..", "img", "decrypt_img.png"))
+        icon_path = get_resource_path(os.path.join("img", "decrypt_img.png"))
         self.decrypt_button.setIcon(QIcon(icon_path))
         self.decrypt_button.setIconSize(QSize(20, 20))
         self.decrypt_button.clicked.connect(lambda: self.start_operation("decrypt"))
@@ -649,7 +690,7 @@ class PyKryptor(QWidget):
         sub_tab_widget.addTab(advanced_tab, "Advanced")
         sub_tab_widget.addTab(usb_tab, "USB-codec")
         save_button = QPushButton("Save settings")
-        icon_path = get_resource_path(os.path.join("..", "img", "save_img.png"))
+        icon_path = get_resource_path(os.path.join("img", "save_img.png"))
         save_button.setIcon(QIcon(icon_path))
         save_button.clicked.connect(self.update_settings)
         main_settings_layout.addWidget(sub_tab_widget)
@@ -732,34 +773,27 @@ class PyKryptor(QWidget):
 
     def load_disclaimer(self):
         try:
-            if getattr(sys, "frozen", False):
-                disclaimer_path = os.path.join(sys._MEIPASS, "..", "txts", "disclaimer.txt")
-            else:
-                disclaimer_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "txts", "disclaimer.txt")
+            disclaimer_path = get_resource_path(os.path.join("txts", "disclaimer.txt"))
             with open(disclaimer_path, "r", encoding="utf-8") as f:
                 return f.read().strip()
         except Exception:
-            return "Disclaimer file not found."
+            return "Disclaimer file not found; shame for ya."
 
     def load_info(self):
         try:
-            if getattr(sys, "frozen", False): disclaimer_path = os.path.join(sys._MEIPASS, "..", "txts", "info.txt")
-            else:
-                disclaimer_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "txts", "info.txt")
-            with open(disclaimer_path, "r", encoding="utf-8") as f:
+            info_path = get_resource_path(os.path.join("txts", "info.txt"))
+            with open(info_path, "r", encoding="utf-8") as f:
                 return f.read().strip()
         except Exception:
-            return "Info file not found."
+            return "Info file not found; ball is out nerd."
 
     def load_log(self):
         try:
-            if getattr(sys, "frozen", False): disclaimer_path = os.path.join(sys._MEIPASS, "..", "txts", "changelog.txt")
-            else:
-                disclaimer_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "txts", "changelog.txt")
-            with open(disclaimer_path, "r", encoding="utf-8") as f:
+            changelogs_path = get_resource_path(os.path.join("txts", "changelog.txt"))
+            with open(changelogs_path, "r", encoding="utf-8") as f:
                 return f.read().strip()
         except Exception:
-            return "Changelogs file not found."
+            return "Changelogs file not found; perhaps guess what's new?"
 
     def update_settings(self):
         compression_mapping = {"None": "none", "Normal (fast)": "normal", "Best (slow-er)": "best", "ULTRAKILL (probably slow)": "ultrakill", "[L] ULTRAKILL (???)": "[L] ultrakill"}
@@ -785,7 +819,7 @@ class PyKryptor(QWidget):
             self.output_dir = desktop_path
             self.output_dir_field.setText(self.output_dir)
             self.play_warning_sound()
-            dialog = CustomDialog("Invalid Path", f"Output directory was invalid and changed to:\n{desktop_path}", self)
+            dialog = CustomDialog("Warning", f"Output directory was invalid and changed to:\n{desktop_path}", self)
             dialog.exec()
         if not self.mute_sfx: self.sound_manager.play_sound("success.wav")
         dialog = CustomDialog("Success", "Settings have been saved to 'config.json'", self)
@@ -811,19 +845,19 @@ class PyKryptor(QWidget):
                 self.output_dir = selected_dir
                 self.output_dir_field.setText(self.output_dir)
             else:
-                dialog = CustomDialog("Invalid directory", "Selected directory does not exist, somehow...?", self)
+                dialog = CustomDialog("Warning", "Selected directory does not exist, somehow...?", self)
                 dialog.exec()
 
     def start_operation(self, operation):
         password = self.password_field.text()
         if not self.files_to_process:
             self.play_warning_sound()
-            dialog = CustomDialog("Eh?", "Maybe choose some file(s) first, pal?", self)
+            dialog = CustomDialog("Warning", "Maybe choose some file(s) first, pal?", self)
             dialog.exec()
             return
         if not password:
             self.play_warning_sound()
-            dialog = CustomDialog("Perhaps no?", "No password?! What the flip.", self)
+            dialog = CustomDialog("Warning", "No password; you nitwit.", self)
             dialog.exec()
             return
         usb_key_path = None
@@ -878,12 +912,12 @@ class PyKryptor(QWidget):
     def toggle_password_visibility(self, checked):
         if checked:
             self.password_field.setEchoMode(QLineEdit.Normal)
-            icon_path = get_resource_path(os.path.join("..", "img", "hide_pass_img.png"))
+            icon_path = get_resource_path(os.path.join("img", "hide_pass_img.png"))
             self.peek_button.setIcon(QIcon(icon_path))
             self.peek_button.setIconSize(QSize(32, 32))
         else:
             self.password_field.setEchoMode(QLineEdit.Password)
-            icon_path = get_resource_path(os.path.join("..", "img", "show_pass_img.png"))
+            icon_path = get_resource_path(os.path.join("img", "show_pass_img.png"))
             self.peek_button.setIcon(QIcon(icon_path))
             self.peek_button.setIconSize(QSize(32, 32))
 
@@ -980,14 +1014,14 @@ class PyKryptor(QWidget):
         self.create_archive_button.setEnabled(True)
         if errors:
             if not self.mute_sfx: self.sound_manager.play_sound("error.wav")
-            error_message = "Some files failed to process:\n" + "\n".join(errors)
-            self.status_label.setText("[ERROR] Some file(s) failed.")
+            error_message = "Some file(s) or archive(s) failed to process:\n" + "\n".join(errors)
+            self.status_label.setText("[ERROR] Something failed.")
             dialog = ErrorExportDialog("Ahh kaput...", error_message, errors, self)
             dialog.exec()
         else:
             if not self.mute_sfx: self.sound_manager.play_sound("success.wav")
-            self.status_label.setText("[INFO] All file(s) processed successfully.")
-            dialog = CustomDialog("Success", "All file(s) processed successfully.", self)
+            self.status_label.setText("[INFO] All file(s) / archive(s) processed successfully.")
+            dialog = CustomDialog("Success", "All file(s) / archive(s) processed successfully.", self)
             dialog.exec()
 
     def dragEnterEvent(self, event):

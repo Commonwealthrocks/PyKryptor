@@ -1,10 +1,63 @@
 ## c_base.py
-## last updated: 19/11/2025 <d/m/y>
+## last updated: 21/11/2025 <d/m/y>
 ## p-y-k-x
 import ctypes 
 import os
+import tempfile
+import glob
+import struct
 import sys
 from colorama import *
+
+def get_resource_path(relative_path):
+    candidates = []
+    if getattr(sys, "frozen", False):
+        if hasattr(sys, "_MEIPASS"):
+            candidates.append(sys._MEIPASS)
+        nuitka_temp = os.environ.get("NUITKA_ONEFILE_TEMP")
+        if nuitka_temp:
+            candidates.append(nuitka_temp)
+        try:
+            candidates.append(os.path.dirname(sys.executable))
+        except Exception:
+            pass
+        try:
+            candidates.append(os.path.dirname(os.path.abspath(sys.argv[0])))
+        except Exception:
+            pass
+        try:
+            candidates.append(tempfile.gettempdir())
+        except Exception:
+            pass
+        candidates.extend([os.environ.get("TEMP"), os.environ.get("TMP")])
+    candidates.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+    candidates.append(os.getcwd())
+    tried = []
+    first_seg = relative_path.split(os.sep)[0]
+    for base in candidates:
+        if not base:
+            continue
+        candidate_path = os.path.join(base, relative_path)
+        tried.append(candidate_path)
+        if os.path.exists(candidate_path):
+            return candidate_path
+        if os.sep in relative_path:
+            alt = os.path.join(base, first_seg, *relative_path.split(os.sep)[1:])
+            tried.append(alt)
+            if os.path.exists(alt):
+                return alt
+    try:
+        tempdir = tempfile.gettempdir()
+        pattern = os.path.join(tempdir, "**", first_seg)
+        for match in glob.glob(pattern, recursive=True):
+            if os.path.isdir(match):
+                candidate = os.path.join(match, *relative_path.split(os.sep)[1:]) if os.sep in relative_path else os.path.join(match, relative_path)
+                tried.append(candidate)
+                if os.path.exists(candidate):
+                    return candidate
+    except Exception:
+        pass
+    raise FileNotFoundError("Resource not found: {!r}. Tried:\n{}".format(relative_path, "\n".join(tried)))
 
 _secure_mem_lib = None
 secure_mem_lib_name = None
@@ -17,11 +70,8 @@ elif sys.platform.startswith("linux"):
     secure_mem_lib_dir = "penguin"
 if secure_mem_lib_dir and secure_mem_lib_name:
     try:
-        if getattr(sys, "frozen", False):
-            lib_path = os.path.join(sys._MEIPASS, "..", "c", secure_mem_lib_dir, secure_mem_lib_name)
-        else:
-            lib_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "c", secure_mem_lib_dir, secure_mem_lib_name)
-        lib_path = os.path.normpath(lib_path)
+        project_relative_path = os.path.join("c", secure_mem_lib_dir, secure_mem_lib_name)
+        lib_path = get_resource_path(project_relative_path)
         _secure_mem_lib = ctypes.CDLL(lib_path)
         _secure_mem_lib.zero_memory.argtypes = [ctypes.c_void_p, ctypes.c_size_t]
         _secure_mem_lib.zero_memory.restype = None
@@ -41,11 +91,8 @@ elif sys.platform.startswith("linux"):
     aes_ni_lib_dir = "penguin"
 if aes_ni_lib_dir and aes_ni_lib_name:
     try:
-        if getattr(sys, "frozen", False):
-            lib_path = os.path.join(sys._MEIPASS, "..", "c", aes_ni_lib_dir, aes_ni_lib_name)
-        else:
-            lib_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "c", aes_ni_lib_dir, aes_ni_lib_name)
-        lib_path = os.path.normpath(lib_path)
+        project_relative_path = os.path.join("c", aes_ni_lib_dir, aes_ni_lib_name)
+        lib_path = get_resource_path(project_relative_path)
         _aes_ni_lib = ctypes.CDLL(lib_path)
         _aes_ni_lib.has_aes_ni.argtypes = []
         _aes_ni_lib.has_aes_ni.restype = ctypes.c_int
