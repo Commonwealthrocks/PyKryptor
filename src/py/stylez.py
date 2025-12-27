@@ -1,5 +1,5 @@
 ## stylez.py
-## last updated: 19/10/2025 <d/m/y>
+## last updated: 27/12/2025 <d/m/y>
 ## p-y-k-x
 STYLE_SHEET = """
 QWidget {
@@ -37,7 +37,7 @@ QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical {
 QScrollBar::add-page:vertical, QScrollBar::sub-page:vertical {
     background: #000000;
 }
-QLineEdit, QComboBox, QSpinBox {
+QLineEdit, QComboBox, QSpinBox, QDoubleSpinBox {
     background-color: #202020;
     border: 1px solid #3E4E52;
     color: #D0D0D0;

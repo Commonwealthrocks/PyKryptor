@@ -159,6 +159,8 @@ class PyKryptor(QWidget):
         self.argon2_time_cost = 3
         self.argon2_memory_cost = 65536
         self.argon2_parallelism = 4
+        self.compression_detection = "legacy"
+        self.entropy_threshold = 7.5
         self.batch_processor = None
         self.progress_dialog = None
         self.config_path = self.get_config_path()
@@ -182,11 +184,11 @@ class PyKryptor(QWidget):
         self.setLayout(main_layout)
         if self.is_admin:
             dialog = CustomDialog("Warning", "You are running PyKryptor with Administrator privileges, due to this some feature's like drag n' drop for Windows will be disabled.\n\nWhy? Yeah I got no fucking clue too.", self)
-            dialog.exec()
+            dialog.exec() ## can't run sfx here fuck my chud life
 
     def init_debug_console(self):
         if self.is_admin:
-            VER = "1.5"
+            VER = "1.6"
             self.debug_console = DebugConsole(parent=self)
             print("--- PyKryptor debug console initialized (Administrator) ---")
             print(f"--- Version: {VER} ---")
@@ -242,6 +244,8 @@ class PyKryptor(QWidget):
                 self.argon2_time_cost = config.get("argon2_time_cost", 3)
                 self.argon2_memory_cost = config.get("argon2_memory_cost", 65536)
                 self.argon2_parallelism = config.get("argon2_parallelism", 4)
+                self.compression_detection = config.get("compression_detection", "legacy")
+                self.entropy_threshold = config.get("entropy_threshold", 7.5)
         except (FileNotFoundError, json.JSONDecodeError):
             pass
         except Exception as e:
@@ -269,7 +273,9 @@ class PyKryptor(QWidget):
             "use_argon2": self.use_argon2,
             "argon2_time_cost": self.argon2_time_cost,
             "argon2_memory_cost": self.argon2_memory_cost,
-            "argon2_parallelism": self.argon2_parallelism}
+            "argon2_parallelism": self.argon2_parallelism,
+            "compression_detection": self.compression_detection,
+            "entropy_threshold": self.entropy_threshold}
         with open(self.config_path, "w") as f:
             json.dump(config, f, indent=4)
 
@@ -392,6 +398,8 @@ class PyKryptor(QWidget):
             "argon2_memory_cost": self.argon2_memory_cost,
             "argon2_parallelism": self.argon2_parallelism,
             "compression_level": self.compression_level,
+            "compression_detection": self.compression_detection,
+            "entropy_threshold": self.entropy_threshold,
             "secure_clear": self.secure_clear,
             "add_recovery_data": self.add_recovery_data,
             "chunk_size_mb": self.chunk_size_mb}
@@ -431,6 +439,8 @@ class PyKryptor(QWidget):
             pbkdf2_hash=archive_data["pbkdf2_hash"],
             usb_key_path=archive_data.get("usb_key_path"),
             archive_name=archive_data["archive_name"],
+            compression_detection_mode=archive_data.get("compression_detection", "legacy"),
+            entropy_threshold=archive_data.get("entropy_threshold", 7.5),
             parent=self)
         self.batch_processor.batch_progress_updated.connect(self.progress_dialog.update_batch_progress)
         self.batch_processor.status_message.connect(lambda msg: self.progress_dialog.file_label.setText(msg))
@@ -571,7 +581,7 @@ class PyKryptor(QWidget):
         self.argon2_time_spinbox = QSpinBox()
         self.argon2_time_spinbox.setRange(1, 20)
         self.argon2_time_spinbox.setValue(self.argon2_time_cost)
-        self.argon2_time_spinbox.setToolTip("Argon2ID time cost (iterations).\n\nTime amout for cracking / decryping Argon2ID,\nthe higher the stronger and slower it is.")
+        self.argon2_time_spinbox.setToolTip("Argon2ID time cost (iterations)\n\nTime amout for cracking / decryping Argon2ID,\nthe higher the stronger and slower it is.")
         kdf_layout.addRow("Argon2 time cost:", self.argon2_time_spinbox)
         self.argon2_memory_spinbox = QSpinBox()
         self.argon2_memory_spinbox.setRange(1024, 1048576)
@@ -584,12 +594,12 @@ class PyKryptor(QWidget):
         argon2_memory_layout = QHBoxLayout()
         argon2_memory_layout.addWidget(self.argon2_memory_spinbox)
         argon2_memory_layout.addWidget(self.argon2_memory_cost_preset)
-        self.argon2_memory_spinbox.setToolTip("Argon2ID memory usage in KB.\n\nHigher usage is more secure and makes\nbruteforcing harder at the cost of RAM itself\nwhile encrypting / decrypting.")
+        self.argon2_memory_spinbox.setToolTip("Argon2ID memory usage in KB\n\nHigher usage is more secure and makes\nbruteforcing harder at the cost of RAM itself\nwhile encrypting / decrypting.")
         kdf_layout.addRow("Argon2ID memory cost:", argon2_memory_layout)
         self.argon2_parallelism_spinbox = QSpinBox()
         self.argon2_parallelism_spinbox.setRange(1, 16)
         self.argon2_parallelism_spinbox.setValue(self.argon2_parallelism)
-        self.argon2_parallelism_spinbox.setToolTip("ArgonID2 parallelism (threads).\n\nAmout of cores Argon2ID will use,\nrecommended to match CPU cores.")
+        self.argon2_parallelism_spinbox.setToolTip("ArgonID2 parallelism (threads)\n\nAmout of cores Argon2ID will use,\nrecommended to match CPU cores.")
         kdf_layout.addRow("Argon2ID parallelism:", self.argon2_parallelism_spinbox)       
         kdf_group.setLayout(kdf_layout)
         compression_group = QGroupBox("Compression")
@@ -601,6 +611,29 @@ class PyKryptor(QWidget):
         self.compression_combo.setCurrentText(current_text)
         self.compression_combo.setToolTip("Compression level\n\nCompression makes (or tries) to make files smaller,\nif you want speed it is NOT recommended\nto use compression at all.")
         compression_layout.addRow("Compression level:", self.compression_combo)
+        self.detection_mode_combo = QComboBox()
+        self.detection_mode_combo.addItems(["Legacy (extension)", "Magic bytes", "Entropy heuristic", "Magic bytes + Entropy"])
+        detection_map = {
+            "legacy": "Legacy (extension)",
+            "magic": "Magic bytes",
+            "entropy": "Entropy heuristic",
+            "magic+entropy": "Magic bytes + Entropy"}
+        self.detection_mode_combo.setCurrentText(detection_map.get(self.compression_detection, "Legacy (extension)"))
+        self.detection_mode_combo.setToolTip("Detection mode\n\nWe use the detection mode to check for already compressed\nfiles with PyKryptor. Each one written in C has it's own\nlittle quirks...\n\nLegacy - only checks for certain file extensions and skips\nthose when compressing.\n\nMagic bytes - we use said signatures; as used;\nto check if the file has compressed data or markings too.\n\nEntropy heuristic - samples around 8KB of a non-determined file to see if\nthe compression ratio is worth, or not.\n\nMagic bytes + Entropy - combines 2nd and 3rd methods into one, most accurate.")
+        compression_layout.addRow("Detection mode:", self.detection_mode_combo)
+        self.entropy_threshold_spinbox = QDoubleSpinBox()
+        self.entropy_threshold_spinbox.setRange(6.0, 8.0)
+        self.entropy_threshold_spinbox.setSingleStep(0.1)
+        self.entropy_threshold_spinbox.setDecimals(1)
+        self.entropy_threshold_spinbox.setValue(self.entropy_threshold)
+        self.entropy_threshold_spinbox.setToolTip("Entropy threshold\n\nThe higher an entropy value is the less likely it\nis to detect compression. Range is from 6.0-8.0;\ndefault is 7.5, and this setting only applies to\nmethods that include entropy.")
+        compression_layout.addRow("Entropy threshold:", self.entropy_threshold_spinbox)
+        from cmp import cmp_check_available
+        if not cmp_check_available():
+            status_label = QLabel("Warning: the C library for compression detection could\nnot be loaded, the legacy Python based\n(extensions) is in use.")
+            status_label.setStyleSheet("color: #FFA500; font-size: 8pt;")
+            status_label.setWordWrap(True)
+            compression_layout.addWidget(status_label) 
         compression_group.setLayout(compression_layout)
         security_group = QGroupBox("Security / data integrity")
         security_layout = QFormLayout()
@@ -610,13 +643,11 @@ class PyKryptor(QWidget):
             self.secure_clear_checkbox.setEnabled(False)
             self.secure_clear_checkbox.setToolTip("Disabled: eh, C library not found... a shame for you.")
         else:
-            self.secure_clear_checkbox.stateChanged.connect(lambda state: self.handle_warning_checkbox(state, self.secure_clear_checkbox, "Warning",
-                "This enables a feature to overwrite the password in memory after use.\n\nThis is an experimental security measure and relies on a compiled C library, aka shit MIGHT go wrong!!"))
+            self.secure_clear_checkbox.stateChanged.connect(lambda state: self.handle_warning_checkbox(state, self.secure_clear_checkbox, "Warning", "This enables a feature to overwrite the password in memory after use.\n\nThis is an experimental security measure and relies on a compiled C library, aka shit MIGHT go wrong!!"))
         security_layout.addRow("Securely clear password from memory:", self.secure_clear_checkbox)
         self.recovery_checkbox = QCheckBox()
         self.recovery_checkbox.setChecked(self.add_recovery_data)
-        self.recovery_checkbox.stateChanged.connect(lambda state: self.handle_warning_checkbox(state, self.recovery_checkbox, "Warning",
-            "This adds Reedsolo recovery data to each chunk.\n\nThis can help repair files from minor corruption (bit rot) but will increase file size and processing time. It does not protect against malicious tampering fuck face.\n\nThis feature is SO slow in fact that I do not even test it myself :)"))
+        self.recovery_checkbox.stateChanged.connect(lambda state: self.handle_warning_checkbox(state, self.recovery_checkbox, "Warning", "This adds Reedsolo recovery data to each chunk.\n\nThis can help repair files from minor corruption (bit rot) but will increase file size and processing time. It does not protect against malicious tampering fuck face.\n\nThis feature is SO slow in fact that I do not even test it myself :)"))
         security_layout.addRow("Add partial data recovery info:", self.recovery_checkbox)
         security_group.setLayout(security_layout)
         performance_group = QGroupBox("Performance")
@@ -655,7 +686,6 @@ class PyKryptor(QWidget):
         usb_tab = QWidget()
         layout = QVBoxLayout(usb_tab)
         layout.setSpacing(12)
-        
         info_group = QGroupBox("USB-codec")
         info_layout = QVBoxLayout()
         info_label = QLabel("USB-codec add an extra layer of security by requiring both a password and a specific USB drive to decrypt files.\n\nSetup a USB drive as a key device, then use it when creating archives.")
@@ -797,9 +827,16 @@ class PyKryptor(QWidget):
 
     def update_settings(self):
         compression_mapping = {"None": "none", "Normal (fast)": "normal", "Best (slow-er)": "best", "ULTRAKILL (probably slow)": "ultrakill", "[L] ULTRAKILL (???)": "[L] ultrakill"}
+        detection_map_rev = {
+            "Legacy (extension)": "legacy",
+            "Magic bytes": "magic",
+            "Entropy heuristic": "entropy",
+            "Magic bytes + Entropy": "magic+entropy"}
         aead_map_rev = {"AES-256-GCM": "aes-gcm", "ChaCha20-Poly1305": "chacha20-poly1305"}
         self.aead_algorithm = aead_map_rev.get(self.aead_combo.currentText(), "aes-gcm")
         self.compression_level = compression_mapping[self.compression_combo.currentText()]
+        self.compression_detection = detection_map_rev.get(self.detection_mode_combo.currentText(), "legacy")
+        self.entropy_threshold = self.entropy_threshold_spinbox.value()
         self.custom_ext = self.custom_ext_field.text()
         self.output_dir = self.output_dir_field.text()
         self.new_name_type = self.new_name_type_combo.currentText()
@@ -894,7 +931,8 @@ class PyKryptor(QWidget):
             use_argon2=self.use_argon2, argon2_time_cost=self.argon2_time_cost,
             argon2_memory_cost=self.argon2_memory_cost, argon2_parallelism=self.argon2_parallelism,
             aead_algorithm=self.aead_algorithm, pbkdf2_hash=self.pbkdf2_hash,
-            usb_key_path=usb_key_path, parent=self) ## not doing a one-liner for this one 😒
+            usb_key_path=usb_key_path, compression_detection_mode=self.compression_detection,
+            entropy_threshold=self.entropy_threshold, parent=self) ## not doing a one-liner for this one 😒
         self.batch_processor.batch_progress_updated.connect(self.progress_dialog.update_batch_progress)
         self.batch_processor.status_message.connect(lambda msg: self.progress_dialog.file_label.setText(msg))
         self.batch_processor.progress_updated.connect(lambda p: self.progress_dialog.file_progress_bar.setValue(int(p)))

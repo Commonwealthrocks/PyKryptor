@@ -1,5 +1,5 @@
 ## cli.py
-## last updated: 19/11/2025 <d/m/y>
+## last updated: 27/12/2025 <d/m/y>
 ## p-y-k-x
 import os
 import sys
@@ -43,6 +43,8 @@ class CLIState:
         self.argon2_parallelism = ARGON2_PARALLELISM
         self.usb_key_path = None
         self.archive_name = None
+        self.compression_detection_mode = "legacy"
+        self.entropy_threshold = 7.5
 
     def save_to_file(self, filepath):
         config = {
@@ -61,7 +63,9 @@ class CLIState:
             "argon2_time_cost": self.argon2_time_cost,
             "argon2_memory_cost": self.argon2_memory_cost,
             "argon2_parallelism": self.argon2_parallelism,
-            "archive_name": self.archive_name}
+            "archive_name": self.archive_name,
+            "compression_detection": self.compression_detection_mode,
+            "entropy_threshold": self.entropy_threshold}
         try:
             with open(filepath, "w") as f:
                 json.dump(config, f, indent=4)
@@ -90,6 +94,8 @@ class CLIState:
                 self.argon2_memory_cost = config.get("argon2_memory_cost", ARGON2_MEMORY_COST)
                 self.argon2_parallelism = config.get("argon2_parallelism", ARGON2_PARALLELISM)
                 self.archive_name = config.get("archive_name", None)
+                self.compression_detection_mode = config.get("compression_detection", "legacy")
+                self.entropy_threshold = config.get("entropy_threshold", 7.5)
             print(f"{Fore.GREEN}[OK] State loaded from '{filepath}'{Style.RESET_ALL}")
         except Exception as e:
             print(f"{Fore.RED}[ERROR] Failed to load state: {e}{Style.RESET_ALL}")
@@ -141,6 +147,8 @@ Examples:
         parser.add_argument("--archive", action="store_true", help="Archive mode for multiple files")
         parser.add_argument("--archive-name", help="Archive filename (default: archive.{ext})")
         parser.add_argument("--chunk-size", type=int, default=3, help="Chunk size in MB (default: 3)")
+        parser.add_argument("--detection-mode", choices=["legacy", "magic", "entropy", "magic+entropy"], default="legacy", help="Compression detection mode (default: legacy)")
+        parser.add_argument("--entropy-threshold", type=float, default=7.5, help="Entropy threshold for compression detection (default: 7.5, range: 6.0-8.0)")
         parser.add_argument("--usb-key", help="USB drive path for USB-codec (e.g., E:\\)")
         parser.add_argument("--usb-list", action="store_true", help="List available USB drives")
         parser.add_argument("--usb-setup", help="Setup USB drive as USB-codec key (e.g., --usb-setup E:\\)")
@@ -170,6 +178,8 @@ Examples:
         self.state.add_recovery_data = args.recovery
         self.state.archive_mode = args.archive
         self.state.chunk_size_mb = args.chunk_size
+        self.state.compression_detection_mode = args.detection_mode
+        self.state.entropy_threshold = max(6.0, min(8.0, args.entropy_threshold))
         self.state.usb_key_path = args.usb_key
         self.state.archive_name = args.archive_name
         if args.save_state:
@@ -292,6 +302,8 @@ Examples:
                     aead_algorithm=self.state.aead_algorithm,
                     pbkdf2_hash=self.state.pbkdf2_hash,
                     usb_key_path=self.state.usb_key_path,
+                    compression_detection_mode=self.state.compression_detection_mode,
+                    entropy_threshold=self.state.entropy_threshold,
                     progress_callback=progress_callback)
                 if self.state.operation == "encrypt":
                     worker._file_list = self.state.files
@@ -331,6 +343,8 @@ Examples:
                         aead_algorithm=self.state.aead_algorithm,
                         pbkdf2_hash=self.state.pbkdf2_hash,
                         usb_key_path=self.state.usb_key_path,
+                        compression_detection_mode=self.state.compression_detection_mode,
+                        entropy_threshold=self.state.entropy_threshold,
                         progress_callback=self.progress_callback)
                     if self.state.operation == "encrypt":
                         worker.encrypt_file()

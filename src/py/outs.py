@@ -242,6 +242,24 @@ class ArchiveCreationDialog(QDialog):
         current_compression = self.current_settings.get("compression_level", "none")
         self.compression_combo.setCurrentText(compression_mapping.get(current_compression, "None"))
         compression_layout.addRow("Compression level:", self.compression_combo)
+        self.detection_mode_combo = QComboBox()
+        self.detection_mode_combo.addItems(["Legacy (extension)", "Magic bytes", "Entropy heuristic", "Magic bytes + Entropy"])
+        detection_map = {
+            "legacy": "Legacy (extension)",
+            "magic": "Magic bytes",
+            "entropy": "Entropy heuristic",
+            "magic+entropy": "Magic bytes + Entropy"}
+        current_detection = self.current_settings.get("compression_detection", "legacy")
+        self.detection_mode_combo.setCurrentText(detection_map.get(current_detection, "Legacy (extension)"))
+        self.detection_mode_combo.setToolTip("Detection mode\n\nWe use the detection mode to check for already compressed\nfiles with PyKryptor. Each one written in C has it's own\nlittle quirks...\n\nLegacy - only checks for certain file extensions and skips\nthose when compressing.\n\nMagic bytes - we use said signatures; as used;\nto check if the file has compressed data or markings too.\n\nEntropy heuristic - samples around 8KB of a non-determined file to see if\nthe compression ratio is worth, or not.\n\nMagic bytes + Entropy - combines 2nd and 3rd methods into one, most accurate.")
+        compression_layout.addRow("Detection mode:", self.detection_mode_combo)
+        self.entropy_threshold_spinbox = QDoubleSpinBox()
+        self.entropy_threshold_spinbox.setRange(6.0, 8.0)
+        self.entropy_threshold_spinbox.setSingleStep(0.1)
+        self.entropy_threshold_spinbox.setDecimals(1)
+        self.entropy_threshold_spinbox.setValue(self.current_settings.get("entropy_threshold", 7.5))
+        self.entropy_threshold_spinbox.setToolTip("Entropy threshold\n\nThe higher an entropy value is the less likely it\nis to detect compression. Range is from 6.0-8.0;\ndefault is 7.5, and this setting only applies to\nmethods that include entropy.")
+        compression_layout.addRow("Entropy threshold:", self.entropy_threshold_spinbox)
         compression_tab.setLayout(compression_layout)
         security_tab = QWidget()
         security_scroll = QScrollArea()
@@ -268,7 +286,7 @@ class ArchiveCreationDialog(QDialog):
         self.usb_path_field.setPlaceholderText("No USB selected")
         if self.current_settings.get("usb_key_path"):
             self.usb_path_field.setText(self.current_settings.get("usb_key_path"))
-        usb_browse_button = QPushButton("Browse")
+        usb_browse_button = QPushButton("Select")
         usb_browse_button.clicked.connect(self.browse_usb_key)
         usb_path_layout = QHBoxLayout()
         usb_path_layout.addWidget(self.usb_path_field)
@@ -483,6 +501,11 @@ class ArchiveCreationDialog(QDialog):
             "Best (slow-er)": "best",
             "ULTRAKILL (probably slow)": "ultrakill",
             "[L] ULTRAKILL (???)": "[L] ultrakill"}
+        detection_map_rev = {
+            "Legacy (extension)": "legacy",
+            "Magic bytes": "magic",
+            "Entropy heuristic": "entropy",
+            "Magic bytes + Entropy": "magic+entropy"}
         aead_map_rev = {"AES-256-GCM": "aes-gcm", "ChaCha20-Poly1305": "chacha20-poly1305"}
         self.archive_data = {
             "files": files,
@@ -497,6 +520,8 @@ class ArchiveCreationDialog(QDialog):
             "argon2_memory_cost": self.argon2_memory_spinbox.value(),
             "argon2_parallelism": self.argon2_parallelism_spinbox.value(),
             "compression_level": compression_mapping[self.compression_combo.currentText()],
+            "compression_detection": detection_map_rev.get(self.detection_mode_combo.currentText(), "legacy"),
+            "entropy_threshold": self.entropy_threshold_spinbox.value(),
             "secure_clear": self.secure_clear_checkbox.isChecked(),
             "add_recovery_data": self.recovery_checkbox.isChecked(),
             "use_usb_key": use_usb_key,
@@ -589,7 +614,7 @@ class CustomArgon2Dialog(QDialog):
         self.setWindowTitle("Argon2ID memory cost :)")
         self.setModal(True)
         self.selected_value = 0
-        self.setFixedSize(400, 230)
+        self.setFixedSize(400, 260)
         main_layout = QVBoxLayout(self)
         info_label = QLabel("Choose an Argon2ID memory preset based on how fucking afraid you are:")
         info_label.setWordWrap(True)
@@ -741,9 +766,9 @@ class USBSetupDialog(QDialog):
         self.usb_path = None
         main_layout = QVBoxLayout(self)
         main_layout.setSpacing(12)
-        info_label = QLabel("Select a USB drive to initialize as a PyKryptor key device.\n\nThis will create a random keyfile on the USB that will be used for encryption.")
+        info_label = QLabel("Select a USB drive to initialize as a PyKryptor key device.\nThis will create a random keyfile on the USB that will be used for encryption.")
         info_label.setWordWrap(True)
-        info_label.setStyleSheet("padding: 10px; background-color: #252525; border-radius: 4px;")
+        info_label.setStyleSheet("padding: 10px;")
         main_layout.addWidget(info_label)
         usb_group = QGroupBox("Available USB drives")
         usb_layout = QVBoxLayout()
@@ -839,9 +864,9 @@ class USBSelectionDialog(QDialog):
         self.usb_path = None
         main_layout = QVBoxLayout(self)
         main_layout.setSpacing(12)
-        info_label = QLabel("This archive was encrypted with the USB-codec format.\n\nPlease select the USB drive that was used for encryption.")
+        info_label = QLabel("You are either using a USB to encrypt an archive or using a USB to decrypt it.\nFor decryption insert the corresponding USB; for encryption select an intialized USB-codec key.")
         info_label.setWordWrap(True)
-        info_label.setStyleSheet("padding: 10px; background-color: #252525; border-radius: 4px; color: #FFA500;")
+        info_label.setStyleSheet("padding: 10px;")
         main_layout.addWidget(info_label)
         usb_group = QGroupBox("Available USB drives")
         usb_layout = QVBoxLayout()
@@ -899,7 +924,7 @@ class USBSelectionDialog(QDialog):
                     self.usb_list.addItem(item)
                     initialized_drives.append(drive)
             if not initialized_drives:
-                self.status_label.setText("No initialized USB-codec keys were found; Maybe double check ya USB?")
+                self.status_label.setText("No initialized USB-codec keys were found; maybe double check ya USB?")
             else:
                 self.status_label.setText(f"Found {len(initialized_drives)} initialized USB(s)")
         except Exception as e:

@@ -1,5 +1,5 @@
 ## core.py
-## last updated: 19/11/2025 <d/m/y>
+## last updated: 27/12/2025 <d/m/y>
 ## p-y-k-x
 import os
 import io
@@ -58,21 +58,34 @@ def compress_chunk_threaded(chunk_data, compression_level):
     return compress_chunk(chunk_data, compression_level)
 
 def create_archive(file_paths, progress_callback=None):
+    if progress_callback:
+        progress_callback(0.0)
     archive_header = bytearray()
     archive_header.extend(struct.pack("!I", len(file_paths)))
     total_size = 0
     file_info = []
+    total_files = len([f for f in file_paths if os.path.isfile(f)])
+    processed_files = 0
     for file_path in file_paths:
         if os.path.isfile(file_path):
             size = os.path.getsize(file_path)
             rel_path = os.path.relpath(file_path, os.path.commonpath(file_paths) if len(file_paths) > 1 else os.path.dirname(file_path))
             file_info.append((file_path, rel_path, size))
             total_size += size
-    for file_path, rel_path, file_size in file_info:
+            processed_files += 1
+            if progress_callback and total_files > 0:
+                progress_callback((processed_files / total_files) * 25.0)
+    if progress_callback:
+        progress_callback(25.0)
+    for i, (file_path, rel_path, file_size) in enumerate(file_info):
         rel_path_bytes = rel_path.encode("utf-8")
         archive_header.extend(struct.pack("!I", len(rel_path_bytes)))
         archive_header.extend(rel_path_bytes)
         archive_header.extend(struct.pack("!Q", file_size))
+        if progress_callback:
+            progress_callback(25.0 + ((i + 1) / len(file_info)) * 25.0)
+    if progress_callback:
+        progress_callback(50.0)
     return bytes(archive_header), file_info, total_size
 
 def extract_archive(archive_data, output_dir, progress_callback=None):
@@ -92,7 +105,7 @@ def extract_archive(archive_data, output_dir, progress_callback=None):
         path_len = struct.unpack("!I", archive_data[offset:offset+4])[0]
         offset += 4
         if path_len == 0 or path_len > (1024 * 4):
-             raise ValueError(f"Invalid archive: invalid path length {path_len} for file {i}")
+            raise ValueError(f"Invalid archive: invalid path length {path_len} for file {i}")
         if offset + path_len > len(archive_data):
             raise ValueError(f"Invalid archive: unexpected end while reading path for file {i}")
         rel_path = archive_data[offset:offset+path_len].decode("utf-8")
@@ -123,7 +136,7 @@ def extract_archive(archive_data, output_dir, progress_callback=None):
         progress_callback(100.0)
 
 class CryptoWorker:
-    def __init__(self, operation, in_path, out_path, password, custom_ext=None, new_name_type=None, output_dir=None, chunk_size=CHUNK_SIZE, kdf_iterations=1000000, secure_clear=False, add_recovery_data=False, compression_level="none", archive_mode=False, use_argon2=False, argon2_time_cost=ARGON2_TIME_COST, argon2_memory_cost=ARGON2_MEMORY_COST, argon2_parallelism=ARGON2_PARALLELISM, aead_algorithm="aes-gcm", pbkdf2_hash="sha256", usb_key_path=None, progress_callback=None, parent=None):
+    def __init__(self, operation, in_path, out_path, password, custom_ext=None, new_name_type=None, output_dir=None, chunk_size=CHUNK_SIZE, kdf_iterations=1000000, secure_clear=False, add_recovery_data=False, compression_level="none", archive_mode=False, use_argon2=False, argon2_time_cost=ARGON2_TIME_COST, argon2_memory_cost=ARGON2_MEMORY_COST, argon2_parallelism=ARGON2_PARALLELISM, aead_algorithm="aes-gcm", pbkdf2_hash="sha256", usb_key_path=None, progress_callback=None, compression_detection_mode="legacy", entropy_threshold=7.5, parent=None):
         self.operation = operation
         self.in_path = in_path
         self.out_path = out_path
@@ -145,6 +158,8 @@ class CryptoWorker:
         self.pbkdf2_hash = pbkdf2_hash
         self.usb_key_path = usb_key_path
         self.progress_callback = progress_callback
+        self.compression_detection_mode = compression_detection_mode
+        self.entropy_threshold = entropy_threshold
         self.is_canceled = False
         self.max_workers = min(8, os.cpu_count() or 1)
 
@@ -164,7 +179,7 @@ class CryptoWorker:
         if iterations is None:
             iterations = self.kdf_iterations
         if hash_algorithm is None:
-             hash_algorithm = hashes.SHA256()
+            hash_algorithm = hashes.SHA256()
         pwd_data = self._get_combined_password()
         if isinstance(pwd_data, bytes) and len(pwd_data) == 32:
             pwd_buffer = ctypes.create_string_buffer(32)
@@ -224,7 +239,7 @@ class CryptoWorker:
             if magic_check == MAGIC_NUMBER or magic_check == MAGIC_NUMBER_LEGACY:
                 raise ValueError("This file appears to be already encrypted with PyKryptor. Aborting to prevent corruption.")
         effective_compression_level = self.compression_level
-        if should_skip_compression(self.in_path):
+        if should_skip_compression(self.in_path, self.compression_detection_mode, self.entropy_threshold):
             effective_compression_level = "none"
         first_chunk = True
         final_compression_id = COMPRESSION_NONE
@@ -380,10 +395,15 @@ class CryptoWorker:
         if self.progress_callback: self.progress_callback(100.0)
 
     def _encrypt_archive(self):
-        archive_header, file_info, total_source_size = create_archive(self._file_list)
-        if self.progress_callback:
-            self.progress_callback(5.0)
+        def archive_progress_callback(progress):
+            if self.progress_callback:
+                self.progress_callback(progress)
+        archive_header, file_info, total_source_size = create_archive(self._file_list, progress_callback=archive_progress_callback)
         effective_compression_level = self.compression_level
+        for file_path, _, _ in file_info:
+            if should_skip_compression(file_path, self.compression_detection_mode, self.entropy_threshold):
+                effective_compression_level = "none"
+                break
         salt = os.urandom(SALT_SIZE)
         if self.aead_algorithm == "chacha20-poly1305":
             aead_id = ALGORITHM_ID_CHACHA
@@ -491,7 +511,7 @@ class CryptoWorker:
                                     outfile.write(parity)
                                 processed_size += len(chunk_data)
                                 if self.progress_callback:
-                                    progress = 5.0 + (processed_size / (len(archive_header) + total_source_size)) * 95.0
+                                    progress = 50.0 + (processed_size / (len(archive_header) + total_source_size)) * 50.0
                                     self.progress_callback(min(100.0, progress))
                     else:
                         for chunk in chunk_batch:
@@ -516,7 +536,7 @@ class CryptoWorker:
                                 outfile.write(parity)
                             processed_size += len(chunk)
                             if self.progress_callback:
-                                progress = 5.0 + (processed_size / (len(archive_header) + total_source_size)) * 95.0
+                                progress = 50.0 + (processed_size / (len(archive_header) + total_source_size)) * 50.0
                                 self.progress_callback(min(100.0, progress))
                     chunk_batch.clear()
             if chunk_batch:
@@ -542,7 +562,7 @@ class CryptoWorker:
                         outfile.write(parity)
                     processed_size += len(chunk)
                     if self.progress_callback:
-                        progress = 5.0 + (processed_size / (len(archive_header) + total_source_size)) * 95.0
+                        progress = 50.0 + (processed_size / (len(archive_header) + total_source_size)) * 50.0
                         self.progress_callback(min(100.0, progress))
         if self.progress_callback:
             self.progress_callback(100.0)
@@ -588,7 +608,7 @@ class CryptoWorker:
                 raise ValueError(f"Invalid file: extension length {ext_len} exceeds maximum {MAX_EXT_LEN}")
             encrypted_ext = infile.read(ext_len)
             if len(encrypted_ext) != ext_len:
-                 raise ValueError("Invalid file: unexpected end while reading extension.")
+                raise ValueError("Invalid file: unexpected end while reading extension.")
             header_end_pos = infile.tell()
             infile.seek(0)
             header_bytes = infile.read(header_end_pos)
@@ -627,7 +647,7 @@ class CryptoWorker:
                 if recovery_enabled:
                     parity_data = infile.read(ecc_bytes)
                     if len(parity_data) != ecc_bytes:
-                         raise ValueError("Invalid file: unexpected end while reading recovery data.")
+                        raise ValueError("Invalid file: unexpected end while reading recovery data.")
                 if not encrypted_chunk: break
                 chunk_data.append((chunk_nonce, encrypted_chunk, parity_data))
             if len(chunk_data) > 4 and compression_id != COMPRESSION_NONE:
@@ -711,7 +731,7 @@ class CryptoWorker:
                 raise ValueError("Not a valid PyKryptor encrypted file.")
             read_version = struct.unpack("!B", infile.read(1))[0]
             if read_version != version:
-                 raise ValueError("Internal logic error: version mismatch.")
+                raise ValueError("Internal logic error: version mismatch.")
             if version < 3:
                 raise ValueError(f"Unsupported format version: {version}. This version requires format 3 or higher.")
             aead_id = ALGORITHM_ID_AES_GCM
@@ -726,7 +746,7 @@ class CryptoWorker:
                 kdf_type = struct.unpack("!B", infile.read(1))[0]
             compression_id = COMPRESSION_NONE
             if version >= 4:
-                 compression_id = struct.unpack("!B", infile.read(1))[0]
+                compression_id = struct.unpack("!B", infile.read(1))[0]
             ecc_bytes = 0
             if recovery_enabled:
                 ecc_bytes = struct.unpack("!B", infile.read(1))[0]
@@ -759,7 +779,7 @@ class CryptoWorker:
                 raise ValueError(f"Invalid file: extension length {ext_len} exceeds maximum {MAX_EXT_LEN}")
             encrypted_ext = infile.read(ext_len)
             if len(encrypted_ext) != ext_len:
-                 raise ValueError("Invalid file: unexpected end while reading extension.")
+                raise ValueError("Invalid file: unexpected end while reading extension.")
             try:
                 original_ext = cipher.decrypt(ext_nonce, encrypted_ext, None).decode("utf-8")
             except InvalidTag:
@@ -792,7 +812,7 @@ class CryptoWorker:
                 if recovery_enabled:
                     parity_data = infile.read(ecc_bytes)
                     if len(parity_data) != ecc_bytes:
-                         raise ValueError("Invalid file: unexpected end while reading recovery data.")
+                        raise ValueError("Invalid file: unexpected end while reading recovery data.")
                 if not encrypted_chunk: break
                 chunk_data.append((chunk_nonce, encrypted_chunk, parity_data))
             if len(chunk_data) > 4 and compression_id != COMPRESSION_NONE:
@@ -874,7 +894,7 @@ class BatchProcessorThread(QThread):
     progress_updated = pyqtSignal(float)
     finished = pyqtSignal(list)
     
-    def __init__(self, operation, file_paths, password, custom_ext=None, output_dir=None, new_name_type=None, chunk_size=CHUNK_SIZE, kdf_iterations=1000000, secure_clear=False, add_recovery_data=False, compression_level="none", archive_mode=False, use_argon2=False, argon2_time_cost=ARGON2_TIME_COST, argon2_memory_cost=ARGON2_MEMORY_COST, argon2_parallelism=ARGON2_PARALLELISM, aead_algorithm="aes-gcm", pbkdf2_hash="sha256", usb_key_path=None, archive_name=None, parent=None):
+    def __init__(self, operation, file_paths, password, custom_ext=None, output_dir=None, new_name_type=None, chunk_size=CHUNK_SIZE, kdf_iterations=1000000, secure_clear=False, add_recovery_data=False, compression_level="none", archive_mode=False, use_argon2=False, argon2_time_cost=ARGON2_TIME_COST, argon2_memory_cost=ARGON2_MEMORY_COST, argon2_parallelism=ARGON2_PARALLELISM, aead_algorithm="aes-gcm", pbkdf2_hash="sha256", usb_key_path=None, archive_name=None, compression_detection_mode="legacy", entropy_threshold=7.5, parent=None):
         super().__init__(parent)
         self.operation = operation
         self.file_paths = file_paths
@@ -896,6 +916,8 @@ class BatchProcessorThread(QThread):
         self.pbkdf2_hash = pbkdf2_hash
         self.usb_key_path = usb_key_path
         self.archive_name = archive_name
+        self.compression_detection_mode = compression_detection_mode
+        self.entropy_threshold = entropy_threshold
         self.is_canceled = False
         self.errors = []
         self.worker = None
@@ -911,7 +933,7 @@ class BatchProcessorThread(QThread):
                     fallback_dir = self.output_dir or os.path.dirname(self.file_paths[0])
                     fallback_name = f"{os.path.splitext(os.path.basename(self.file_paths[0]))[0]}_archive.{self.custom_ext}"
                     out_path = os.path.join(fallback_dir, fallback_name)
-                self.worker = CryptoWorker(operation=self.operation, in_path=self.file_paths[0], out_path=out_path, password=self.password, custom_ext=self.custom_ext, new_name_type=self.new_name_type, output_dir=self.output_dir, chunk_size=self.chunk_size, kdf_iterations=self.kdf_iterations, secure_clear=self.secure_clear, add_recovery_data=self.add_recovery_data, compression_level=self.compression_level, archive_mode=self.archive_mode, use_argon2=self.use_argon2, argon2_time_cost=self.argon2_time_cost, argon2_memory_cost=self.argon2_memory_cost, argon2_parallelism=self.argon2_parallelism, aead_algorithm=self.aead_algorithm, pbkdf2_hash=self.pbkdf2_hash, usb_key_path=self.usb_key_path, progress_callback=lambda p: self.progress_updated.emit(p))
+                self.worker = CryptoWorker(operation=self.operation, in_path=self.file_paths[0], out_path=out_path, password=self.password, custom_ext=self.custom_ext, new_name_type=self.new_name_type, output_dir=self.output_dir, chunk_size=self.chunk_size, kdf_iterations=self.kdf_iterations, secure_clear=self.secure_clear, add_recovery_data=self.add_recovery_data, compression_level=self.compression_level, archive_mode=self.archive_mode, use_argon2=self.use_argon2, argon2_time_cost=self.argon2_time_cost, argon2_memory_cost=self.argon2_memory_cost, argon2_parallelism=self.argon2_parallelism, aead_algorithm=self.aead_algorithm, pbkdf2_hash=self.pbkdf2_hash, usb_key_path=self.usb_key_path, compression_detection_mode=self.compression_detection_mode, entropy_threshold=self.entropy_threshold, progress_callback=lambda p: self.progress_updated.emit(p))
                 self.worker._file_list = self.file_paths
                 self.worker.encrypt_file()
             except Exception as e:
@@ -923,10 +945,10 @@ class BatchProcessorThread(QThread):
                 self.batch_progress_updated.emit(i + 1, total_files)
                 self.status_message.emit(f"Processing: {os.path.basename(file_path)}")
                 try:
-                    out_path = file_path
+                    out_path = file_path ## type; path(l)
                     if self.output_dir:
                         out_path = os.path.join(self.output_dir, os.path.basename(file_path))
-                    self.worker = CryptoWorker(operation=self.operation, in_path=file_path, out_path=out_path, password=self.password, custom_ext=self.custom_ext, new_name_type=self.new_name_type, output_dir=self.output_dir, chunk_size=self.chunk_size, kdf_iterations=self.kdf_iterations, secure_clear=self.secure_clear, add_recovery_data=self.add_recovery_data, compression_level=self.compression_level, archive_mode=self.archive_mode, use_argon2=self.use_argon2, argon2_time_cost=self.argon2_time_cost, argon2_memory_cost=self.argon2_memory_cost, argon2_parallelism=self.argon2_parallelism, aead_algorithm=self.aead_algorithm, pbkdf2_hash=self.pbkdf2_hash, usb_key_path=self.usb_key_path, progress_callback=lambda p: self.progress_updated.emit(p))
+                    self.worker = CryptoWorker(operation=self.operation, in_path=file_path, out_path=out_path, password=self.password, custom_ext=self.custom_ext, new_name_type=self.new_name_type, output_dir=self.output_dir, chunk_size=self.chunk_size, kdf_iterations=self.kdf_iterations, secure_clear=self.secure_clear, add_recovery_data=self.add_recovery_data, compression_level=self.compression_level, archive_mode=self.archive_mode, use_argon2=self.use_argon2, argon2_time_cost=self.argon2_time_cost, argon2_memory_cost=self.argon2_memory_cost, argon2_parallelism=self.argon2_parallelism, aead_algorithm=self.aead_algorithm, pbkdf2_hash=self.pbkdf2_hash, usb_key_path=self.usb_key_path, compression_detection_mode=self.compression_detection_mode, entropy_threshold=self.entropy_threshold, progress_callback=lambda p: self.progress_updated.emit(p))
                     if self.operation == "encrypt":
                         self.worker.encrypt_file()
                     elif self.operation == "decrypt":
