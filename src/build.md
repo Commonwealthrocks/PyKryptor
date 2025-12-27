@@ -1,4 +1,4 @@
-# **Build file for PyKryptor - v1.5**
+# **Build file for PyKryptor - v1.6**
 If you want to manually compile **PyKryptor** (or you just are using **Linux**), this file here is for you!!
 
 ## **Basic requirements**
