@@ -1,6 +1,6 @@
 ## disclaimer.txt
 LEGAL SHIT (because lawyers exist)
-
+ 
 This software is provided "AS IS", meaning if it breaks, you get to keep
 both pieces.
 

@@ -1,0 +1,132 @@
+## cli.txt
+COMMAND LINE INTERFACE DOCUMENTATION
+
+BASIC USAGE:
+  pykryptor -e -p "password" -f file.txt
+  pykryptor -d -p "password" -f encrypted.dat
+
+OPERATIONS:
+  -e, --encrypt                Encrypt file(s)
+  -d, --decrypt                Decrypt file(s)
+
+REQUIRED ARGUMENTS:
+  -p, --password [TEXT]        Encryption/decryption password.
+  -f, --files FILE [...]       File(s) to process (use . prefix for relative paths).
+
+OUTPUT OPTIONS:
+  -o, --output DIR             Output directory (default: same as input)
+  --ext EXT                    Custom file extension (default: dat)
+  --name-type TYPE             Output filename type:
+                               - keep: keep original name (default)
+                               - hash: use SHA-256 hash as filename
+                               - base64: use base64 encoded original name
+
+COMPRESSION:
+  --compression LEVEL          Compression level:
+                               - none: no compression (fastest, default)
+                               - normal: zlib compression (fast, decent ratio)
+                               - best: zstandard level 3 (balanced)
+                               - ultrakill: zstandard level 22 (slow, best)
+                               - [L] ultrakill: LZMA preset 9 (REALLY slow)
+
+  --detection-mode [MODE]      Compression detection mode:
+                               - legacy: check file extensions only (default)
+                               - magic: check magic bytes (file signatures)
+                               - entropy: use entropy heuristic (8KB sample)
+                               - magic + entropy: combine magic bytes + entropy
+
+  --entropy-threshold [FLOAT]  Entropy threshold for detection (default: 7.5)
+                               range: 6.0-8.0
+                               higher = less likely to detect compression
+                               only applies to entropy based modes.
+
+ENCRYPTION OPTIONS:
+  --aead [ALGORITHM]           AEAD algorithm:
+                               - aes-gcm: AES-256-GCM (default; faster with AES-NI)
+                               - chacha20-poly1305: ChaCha20-Poly1305
+
+KEY DERIVATION (KDF):
+  --use-argon2                 Use Argon2ID instead of PBKDF2 (recommended)
+  --kdf-iterations [NUM]       PBKDF2 iterations (default: 1000000)
+  --pbkdf2-hash [TYPE]         PBKDF2 hash type:
+                               - sha256: SHA-256 (default)
+                               - sha512: SHA-512
+
+  --argon2-time [NUM]          Argon2ID time cost (default: 3)
+  --argon2-memory [NUM]        Argon2ID memory cost in KB (default: 65536)
+  --argon2-parallelism [NUM]   Argon2ID parallelism/threads (default: 4)
+
+SECURITY OPTIONS:
+  --secure-clear               Securely clear password from memory after use.
+  --recovery                   Add Reed-Solomon error correction data
+                               (helps repair minor corruption, increases file size).
+
+ARCHIVE MODE:
+  --archive                    Combine multiple files into single encrypted archive.
+  --archive-name [NAME]        Archive filename (default: archive.{ext}).
+
+PERFORMANCE:
+  --chunk-size [MB]            Chunk size in MB (default: 3)
+                               use with caution; larger chunks use more RAM.
+
+USB-CODEC:
+  --usb-key [PATH]             USB drive path for USB-codec (e.g., E:\\) 
+                               requires both password AND USB drive to decrypt.
+  --usb-list                   List available USB drives and their status.
+  --usb-setup [PATH]           Setup USB drive as USB-codec key device.
+
+STATE FILES:
+  -ss, --save-state [FILE]     Save current settings to state file
+  -ls, --load-state [FILE]     Load settings from state file
+
+EXAMPLES:
+
+Basic encryption:
+  pykryptor -e -p "mypassword" -f document.txt
+
+Basic decryption:
+  pykryptor -d -p "mypassword" -f document.dat
+
+Multiple files:
+  pykryptor -e -p "pass" -f file1.txt file2.txt file3.txt -o ./encrypted/
+
+Archive mode:
+  pykryptor -e -p "pass" -f ./folder/* --archive --archive-name tax_fraud_maybe.dat
+
+With compression:
+  pykryptor -e -p "pass" -f big_big_file.txt --compression best
+
+With compression detection:
+  pykryptor -e -p "pass" -f mixed_files/* --compression best --detection-mode magic+entropy
+
+Using Argon2ID:
+  pykryptor -e -p "pass" -f file.txt --use-argon2 --argon2-memory 131072
+
+Save and load state:
+  pykryptor -ss myconfig.json -e -p "pass" -f file.txt --compression best
+  pykryptor -ls myconfig.json -e -p "pass" -f another.txt
+
+USB-codec setup:
+  pykryptor --usb-list
+  pykryptor --usb-setup E:\
+  pykryptor -e -p "pass" -f file.txt --usb-key E:\
+
+Hash based filename:
+  pykryptor -e -p "pass" -f secret.txt --name-type hash
+
+NOTES:
+- File paths starting with "." are treated as relative to current directory.
+- Archive mode preserves directory structure.
+- Compression detection automatically skips already compressed files.
+- USB-codec requires the same USB drive used for encryption to decrypt.
+- State files save all settings except password and file paths.
+- Progress is shown as a progress bar during processing.
+
+ERROR HANDLING:
+- Missing required arguments will show error and exit.
+- Invalid file paths will show error and exit.
+- USB-codec errors will show detailed messages.
+- Password errors during decryption will show authentication failure.
+
+## end
+

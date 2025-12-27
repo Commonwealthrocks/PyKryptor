@@ -152,7 +152,7 @@ VERSION 1.4 - 02.11.2025 <d/m/y>
 - Changed default setting (Argon2ID)
 - Changed name from PyLI to PyKryptor
 
-VERSION 1.5 - 19.11.2025 <d/m/y> [LATEST]
+VERSION 1.5 - 19.11.2025 <d/m/y>
 - Fixed archives using pathreal() to avoid TOCTOU
   attacks
 - Fixed memory exhaustion with header; disallow crashes
@@ -164,6 +164,15 @@ VERSION 1.5 - 19.11.2025 <d/m/y> [LATEST]
 - Added USB-codec mode
 - Re-organized code for compiling
 - Removed build.c
+
+VERSION 1.6 - 21.12.2025 <d/m/y> [LATEST]
+- Added a smart-er™️ skip compression system
+- Added different options for smart compression
+- Added CLI documentation
+- Added better progress while making an archive
+- Updated CLIState
+- Re-coded smart compression into C with a Python
+  fallback
 
 That's all for now :)
 
