@@ -1088,22 +1088,48 @@ class PyKryptor(QWidget):
         self.sound_manager.unload()
         event.accept()
 
+def _log_unhandled(exc_type, exc_value, exc_tb):
+    try:
+        import traceback
+        log_base = os.path.dirname(sys.executable) if getattr(sys, "frozen", False) else os.getcwd()
+        logpath = os.path.join(log_base, "pykryptor_startup.log")
+        with open(logpath, "a", encoding="utf-8") as f:
+            f.write("Unhandled exception:\n")
+            traceback.print_exception(exc_type, exc_value, exc_tb, file=f)
+    except Exception:
+        pass
+
+sys.excepthook = _log_unhandled
+
 if __name__ == "__main__":
-    app = QApplication(sys.argv)
-    stream_redirect = QtStream()
-    if sys.platform == "win32":
-        app.setStyle("windowsvista")
-    else:
-        app.setStyle("Fusion")
-    if is_admin():
-        sys.stdout = stream_redirect
-        sys.stderr = stream_redirect
-    window = PyKryptor()
-    ## rm_pycache() <-- shit slows down the app like CRAZY
-    if window.debug_console:
-        stream_redirect.connect_target(window.debug_console.append_text)   
-    window.show()
-    print(Fore.GREEN + "[DEV PRINT] Hello my dear World..." + Style.RESET_ALL)
-    sys.exit(app.exec())
+    try:
+        app = QApplication(sys.argv)
+        stream_redirect = QtStream()
+        if sys.platform == "win32":
+            app.setStyle("windowsvista")
+        else:
+            app.setStyle("Fusion")
+        if is_admin():
+            sys.stdout = stream_redirect
+            sys.stderr = stream_redirect
+        window = PyKryptor()
+        ## rm_pycache() <-- shit slows down the app like CRAZY
+        if window.debug_console:
+            stream_redirect.connect_target(window.debug_console.append_text)
+        window.show()
+        print(Fore.GREEN + "[DEV PRINT] Hello my dear World..." + Style.RESET_ALL)
+        sys.exit(app.exec())
+    except Exception:
+        import traceback as _tb
+        _tb.print_exc()
+        try:
+            log_base = os.path.dirname(sys.executable) if getattr(sys, "frozen", False) else os.getcwd()
+            logpath = os.path.join(log_base, "pykryptor_startup.log")
+            with open(logpath, "a", encoding="utf-8") as f:
+                f.write("Startup exception:\n")
+                _tb.print_exc(file=f)
+        except Exception:
+            pass
+        raise
 
 ## end
