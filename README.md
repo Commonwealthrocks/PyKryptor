@@ -20,7 +20,7 @@ If you're encrypting files from a nosy **roommate** / **friend**, **family**, th
 ## *"Can't I just use **WinRAR** or **7-zip** tho?"*
 Yes. Yes you can, here's the gist of it:
 
-- **WinRAR / 7-zip** - Main priority for them is *compression*, they just have encryption tackled on too.
+- **WinRAR / 7-zip** - main priority for them is *compression*, they just have encryption tackled on too.
 
 - **PyKryptor** - **PyKryptor** is made exactly for security, it also offers decent compression rates.
 
@@ -40,11 +40,11 @@ If you use a weak password example `1234` or lord forbid `password`, then yeah a
 It comes down to transparency and control. Here's what **PyKryptor** offers:
 
 - **Fully transparent** - AxCrypt says *"AES-256 `¯\_(ツ)_/¯`"* (or **AES-128** if you don't have premium)... but which mode? What KDF? I show everything: **AES-256-GCM** / **ChaCha20-Poly1305**, **Argon2ID**, the whole stack.
-- **Free forever** - no premium tiers, no feature locks ❤️
+- **Free forever** - no premium tiers, no feature locks.
 - **Open source** - audit the code yourself. Don't trust, verify.
 - **MIT licensed** - use it however you want
 - **100% offline** - never touches the internet, never collects data
-- **Actually simple** - ever tried PGP/GPG? Yeah. Thank me later
+- **Actually simple** - ever tried `PGP` / `GPG`? Yeah. Thank me later
 
 **AxCrypt** might work fine, but can you see how it works? With **PyKryptor**, the code is as good as yours.
 
