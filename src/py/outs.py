@@ -885,7 +885,7 @@ class USBSetupDialog(QDialog):
         except Exception as e:
             if self.parent() and hasattr(self.parent(), "sound_manager") and not self.parent().mute_sfx:
                 self.parent().sound_manager.play_sound("error.wav")
-            dialog = CustomDialog("Error", f"Failed to setup USB-codec:\n{str(e)}", self)
+            dialog = CustomDialog("Error", f"Failed to setup USB-codec.\n\ne:{str(e)}", self)
             dialog.exec()
 
 class USBSelectionDialog(QDialog):
@@ -945,7 +945,7 @@ class USBSelectionDialog(QDialog):
             for drive in drives:
                 if is_usb_key_initialized(drive):
                     info = get_usb_key_info(drive)
-                    item_text = f"{drive} (UUID: {info['uuid'][:12]}...)"
+                    item_text = f"{drive} (UUID: {info["uuid"][:12]}...)"
                     item = QListWidgetItem(item_text)
                     item.setData(Qt.ItemDataRole.UserRole, drive)
                     item.setForeground(QColor("#4A90E2"))
