@@ -8,7 +8,7 @@ PBKDF2 hash type: SHA-256, SHA-512
 Iterations PBKDF2: 1,000,000 (default)
 Settings Argon2ID: 64MB memory, 3 iterations, 4 parallelism (defaults)
 Salt size: 16 bytes (random per file)
-Nonce size: 12 bytes (random per chunk/header)
+Nonce size: 12 bytes (random per chunk / header)
 Chunk size: 3MB (3 * 1024 * 1024); default
 
 COMPRESSION OPTIONS:
@@ -66,12 +66,12 @@ Crypto library: cryptography (Rust / C based)
 Compression: zlib, zstandard, lzma
 Compiler: Nuitka (when distributed)
 Platform: Windows based, Linux / macOS untested
-Build version: 2-7-1-2-2-0-2-5
-Version: 1.6
+Build version: 1-0-0-2-2-0-2-6
+Version: 1.7
 
 KNOWN LIMITATIONS:
 No file shredding after encryption.
-Progress is more accurate I guess...
-No key file support (password only and USB-codec).
+Multithreaded progress is best effort.
+Secure terminal hiding is Windows only.
 
 ## end
