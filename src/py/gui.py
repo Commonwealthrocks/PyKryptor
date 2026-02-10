@@ -230,7 +230,7 @@ class PyKryptor(QWidget):
         except Exception as e:
             if hasattr(self, "sound_manager"):
                 self.sound_manager.play_sound("error.wav")
-            dialog = CustomDialog("Oi blyat...", f"Failed to load settings: {e}", self)
+            dialog = CustomDialog("Oi blyat...", f"Failed to load settings.\n\ne:{e}", self)
             dialog.exec()
 
     def save_settings(self):
