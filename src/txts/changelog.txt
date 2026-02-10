@@ -165,7 +165,7 @@ VERSION 1.5 - 19.11.2025 <d/m/y>
 - Re-organized code for compiling
 - Removed build.c
 
-VERSION 1.6 - 21.12.2025 <d/m/y> [LATEST]
+VERSION 1.6 - 21.12.2025 <d/m/y>
 - Added a smart-er™️ skip compression system
 - Added different options for smart compression
 - Added CLI documentation
@@ -173,7 +173,20 @@ VERSION 1.6 - 21.12.2025 <d/m/y> [LATEST]
 - Updated CLIState
 - Re-coded smart compression into C with a Python
   fallback
-
-That's all for now :)
+  
+VERSION 1.7 - 10.02.2026 <d/m/y> [LATEST]
+- Added full keyfile support (.pykx)
+- Added authentication toggle shortcut
+  (CTRL + SHIFT + K)
+- Added better USB-codec security
+- Added USB-codec obfuscation
+- Added splash screen
+- Added volume bar to the sound effects
+- Removed the confirm password box from
+  the archive creation tab
+- Fixed Nuitka [__FROZEN] loading issues
+- Centralized ALL .dll / .so loading in
+  c_base.py now
+- General code cleanup and stability improvements
 
 ## end
