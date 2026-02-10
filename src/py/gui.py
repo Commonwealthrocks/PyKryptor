@@ -1,5 +1,5 @@
 ## gui.py
-## last updated: 21/11/2025 <d/m/y>
+## last updated: 10/02/2026 <d/m/y>
 ## p-y-k-x
 import sys
 import os
@@ -10,7 +10,27 @@ import tempfile
 import json
 import struct
 from colorama import *
+if sys.platform == "win32":
+    try:
+        ctypes.windll.kernel32.FreeConsole()
+        ctypes.windll.kernel32.AllocConsole()
+        sys.stdout = open("CONOUT$", "w")
+        sys.stderr = open("CONOUT$", "w")
+        ctypes.windll.kernel32.SetConsoleTitleW("Launching...")
+    except Exception:
+        pass
 init(autoreset=True)
+print(Fore.CYAN + Style.BRIGHT + r"""
+  ____        _  __                  _
+ |  _ \ _   _| |/ /_ __ _   _ _ __  | |_ ___  _ __
+ | |_) | | | | ' /| '__| | | | '_ \ | __/ _ \| '__|
+ |  __/| |_| | . \| |  | |_| | |_) || || (_) | |
+ |_|    \__, |_|\_\_|   \__, | .__/  \__\___/|_|
+        |___/           |___/|_|
+""" + Style.RESET_ALL)
+print(Fore.GREEN + "[INFO] Initializing PyKryptor...")
+print(Fore.GREEN + "[INFO] This MIGHT take a bit..." + Style.RESET_ALL)
+
 from PySide6.QtWidgets import *
 from PySide6.QtCore import *
 from PySide6.QtGui import *
@@ -29,9 +49,9 @@ except ImportError:
 
 from core import BatchProcessorThread
 from stylez import STYLE_SHEET
-from outs import ProgressDialog, CustomDialog, ErrorExportDialog, DebugConsole, CustomArgon2Dialog, ArchiveCreationDialog, USBSetupDialog, USBSelectionDialog, enable_win_dark_mode
+from outs import ProgressDialog, CustomDialog, ErrorExportDialog, DebugConsole, CustomArgon2Dialog, ArchiveCreationDialog, USBSetupDialog, USBSelectionDialog, enable_win_dark_mode, KeyfileGeneratorDialog
 from sfx import SoundManager
-from c_base import isca, check_aes_ni, aes_ni_aval
+from c_base import isca, check_aes_ni, aes_ni_aval, get_resource_path
 
 def rm_pycache():
     cache_dirs = glob.glob(os.path.join("**", "__pycache__"), recursive=True)
@@ -44,60 +64,10 @@ def rm_pycache():
         try:
             if os.path.exists(cache_path) and os.path.isdir(cache_path):
                 shutil.rmtree(cache_path)
-        except PermissionError:
+        except PermissionError as e:
             print(Fore.RED + f"[DEV PRINT] Cannot remove __pycache__ directory from '{cache_path}'.\n\ne: {e}" + Style.RESET_ALL)
         except OSError as e:
             print(Fore.RED + f"[DEV PRINT] Failed to remove __pycache__ from '{cache_path}'.\n\ne: {e}" + Style.RESET_ALL)
-
-def get_resource_path(relative_path):
-    candidates = []
-    if getattr(sys, "frozen", False):
-        if hasattr(sys, "_MEIPASS"):
-            candidates.append(sys._MEIPASS)
-        nuitka_temp = os.environ.get("NUITKA_ONEFILE_TEMP")
-        if nuitka_temp:
-            candidates.append(nuitka_temp)
-        try:
-            candidates.append(os.path.dirname(sys.executable))
-        except Exception:
-            pass
-        try:
-            candidates.append(os.path.dirname(os.path.abspath(sys.argv[0])))
-        except Exception:
-            pass
-        try:
-            candidates.append(tempfile.gettempdir())
-        except Exception:
-            pass
-        candidates.extend([os.environ.get("TEMP"), os.environ.get("TMP")])
-    candidates.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-    candidates.append(os.getcwd())
-    tried = []
-    first_seg = relative_path.split(os.sep)[0]
-    for base in candidates:
-        if not base:
-            continue
-        candidate_path = os.path.join(base, relative_path)
-        tried.append(candidate_path)
-        if os.path.exists(candidate_path):
-            return candidate_path
-        if os.sep in relative_path:
-            alt = os.path.join(base, first_seg, *relative_path.split(os.sep)[1:])
-            tried.append(alt)
-            if os.path.exists(alt):
-                return alt
-    try:
-        tempdir = tempfile.gettempdir()
-        pattern = os.path.join(tempdir, "**", first_seg)
-        for match in glob.glob(pattern, recursive=True):
-            if os.path.isdir(match):
-                candidate = os.path.join(match, *relative_path.split(os.sep)[1:]) if os.sep in relative_path else os.path.join(match, relative_path)
-                tried.append(candidate)
-                if os.path.exists(candidate):
-                    return candidate
-    except Exception:
-        pass
-    raise FileNotFoundError("Resource not found: {!r}. Tried:\n{}".format(relative_path, "\n".join(tried)))
 
 def is_admin():
     try:
@@ -137,8 +107,8 @@ class PyKryptor(QWidget):
     def __init__(self):
         super().__init__()
         self.setWindowTitle("PyKryptor")
-        self.setGeometry(100, 100, 500, 380)
-        self.setFixedSize(500, 400)
+        self.setGeometry(100, 100, 500, 420) 
+        self.setFixedSize(500, 450)
         self.setStyleSheet(STYLE_SHEET)
         self.setAcceptDrops(True)
         enable_win_dark_mode(self)
@@ -147,6 +117,7 @@ class PyKryptor(QWidget):
         self.output_dir = ""
         self.new_name_type = "keep"
         self.mute_sfx = False
+        self.sfx_volume = 1.0
         self.chunk_size_mb = 3
         self.kdf_iterations = 1000000
         self.pbkdf2_hash = "sha-256"
@@ -163,14 +134,16 @@ class PyKryptor(QWidget):
         self.entropy_threshold = 7.5
         self.batch_processor = None
         self.progress_dialog = None
+        self.keyfile_path = None
         self.config_path = self.get_config_path()
+        self.sound_manager = SoundManager()
         self.load_settings()
         self.validate_output_dir()
-        self.sound_manager = SoundManager()
         self.sound_manager.list_available_sounds()
         self.sound_manager.load_sound("success.wav")
         self.sound_manager.load_sound("error.wav")
         self.sound_manager.load_sound("info.wav")
+        self.sound_manager.set_volume(self.sfx_volume)
         self.has_aes_ni = check_aes_ni()
         self.is_admin = is_admin()
         self.debug_console = None
@@ -206,6 +179,10 @@ class PyKryptor(QWidget):
                     self.debug_console.show()
                 event.accept()
                 return
+        elif event.key() == Qt.Key_K and event.modifiers() == (Qt.ControlModifier | Qt.ShiftModifier):
+            self.toggle_authentication_mode()
+            event.accept()
+            return
         super().keyPressEvent(event)
 
     def get_config_path(self):
@@ -221,6 +198,7 @@ class PyKryptor(QWidget):
                 desktop_path = os.path.expanduser("~")
             self.output_dir = desktop_path
             self.save_settings()
+            self.play_warning_sound()
             dialog = CustomDialog("Output directory fix", f"Your output directory was invalid and has been changed to:\n{desktop_path}\n\nThank me later :3", self)
             dialog.exec()
 
@@ -232,6 +210,7 @@ class PyKryptor(QWidget):
                 self.output_dir = config.get("output_dir", "")
                 self.new_name_type = config.get("new_name_type", "keep")
                 self.mute_sfx = config.get("mute_sfx", False)
+                self.sfx_volume = config.get("sfx_volume", 1.0)
                 self.chunk_size_mb = config.get("chunk_size_mb", 3)
                 self.kdf_iterations = config.get("kdf_iterations", 1000000)
                 self.pbkdf2_hash = config.get("pbkdf2_hash", "sha-256")
@@ -249,7 +228,8 @@ class PyKryptor(QWidget):
         except (FileNotFoundError, json.JSONDecodeError):
             pass
         except Exception as e:
-            self.sound_manager.play_sound("error.wav")
+            if hasattr(self, "sound_manager"):
+                self.sound_manager.play_sound("error.wav")
             dialog = CustomDialog("Oi blyat...", f"Failed to load settings: {e}", self)
             dialog.exec()
 
@@ -262,6 +242,7 @@ class PyKryptor(QWidget):
             "output_dir": self.output_dir,
             "new_name_type": self.new_name_type,
             "mute_sfx": self.mute_sfx,
+            "sfx_volume": self.sfx_volume,
             "chunk_size_mb": self.chunk_size_mb,
             "kdf_iterations": self.kdf_iterations,
             "pbkdf2_hash": self.pbkdf2_hash,
@@ -278,6 +259,85 @@ class PyKryptor(QWidget):
             "entropy_threshold": self.entropy_threshold}
         with open(self.config_path, "w") as f:
             json.dump(config, f, indent=4)
+
+    def select_files(self):
+        file_dialog = QFileDialog()
+        file_dialog.setFileMode(QFileDialog.ExistingFiles)
+        if file_dialog.exec():
+            self.input_path_field.setText("; ".join(file_dialog.selectedFiles()))
+            self.files_to_process = file_dialog.selectedFiles()
+    
+    def dropEvent(self, event):
+        if event.mimeData().hasUrls():
+            urls = [url.toLocalFile() for url in event.mimeData().urls()]
+            valid_files = []
+            for path in urls:
+                if os.path.isfile(path) or os.path.isdir(path):
+                    valid_files.append(path)
+            if valid_files:
+                self.input_path_field.setText("; ".join(valid_files))
+                self.files_to_process = valid_files
+            event.acceptProposedAction()
+        else:
+            super().dropEvent(event)
+
+    def dragEnterEvent(self, event):
+        if event.mimeData().hasUrls():
+            event.acceptProposedAction()
+        else:
+            super().dragEnterEvent(event)
+
+    def toggle_password_visibility(self, checked):
+        if checked:
+            self.password_field.setEchoMode(QLineEdit.Normal)
+            icon_path = get_resource_path(os.path.join("img", "hide_pass_img.png"))
+            self.peek_button.setIcon(QIcon(icon_path))
+        else:
+            self.password_field.setEchoMode(QLineEdit.Password)
+            icon_path = get_resource_path(os.path.join("img", "show_pass_img.png"))
+            self.peek_button.setIcon(QIcon(icon_path))
+
+    def update_password_strength(self, password):
+        if not ZXCVBN_AVAILABLE or not self.strength_bar:
+            return
+        if not password:
+            self.strength_bar.setValue(0)
+            self.strength_label.setText("Password strength: X")
+            self.strength_label.setStyleSheet("color: #888888; font-size: 9pt; margin-top: 2px;")
+            return
+        if len(password) > 72:
+            self.strength_bar.setValue(4)
+            self.strength_label.setText("Password strength: Strong")
+            self.strength_label.setStyleSheet("color: #44DD44; font-size: 9pt; margin-top: 2px;")
+            return
+        result = zxcvbn(password)
+        score = result["score"]
+        colors = ["#FF4444", "#FF8844", "#FFAA44", "#88DD44", "#44DD44"]
+        labels = ["Really?", "Weak", "Fair", "Good", "Strong"]
+        self.strength_bar.setValue(score)
+        self.strength_bar.setStyleSheet(f"""
+            QProgressBar {{
+                border: 1px solid #5A5A5A;
+                background-color: #3C3C3C;
+                border-radius: 3px;
+                margin-top: 2px;
+            }}
+            QProgressBar::chunk {{
+                background-color: {colors[score] if score < len(colors) else colors[-1]};
+                border-radius: 2px;
+            }}""")
+        self.strength_label.setText(f"Password strength: {labels[score] if score < len(labels) else labels[-1]}")
+        self.strength_label.setStyleSheet(f"color: {colors[score] if score < len(colors) else colors[-1]}; font-size: 9pt; margin-top: 2px;")
+
+    def browse_keyfile(self):
+        file, _ = QFileDialog.getOpenFileName(self, "Select keyfile", "", "PyKryptor keyfiles (*.pykx);;All files (*)")
+        if file:
+            self.keyfile_path = file
+            self.keyfile_label.setText(f"Keyfile: {os.path.basename(file)}")
+            self.keyfile_label.setToolTip(file)
+        else:
+            self.keyfile_path = None
+            self.keyfile_label.setText("No Keyfile selected")
 
     def create_main_tab(self):
         main_tab = QWidget()
@@ -331,8 +391,7 @@ class PyKryptor(QWidget):
             QPushButton:checked {
                 background-color: #3D3D3D;
                 border: 1px solid #666666;
-            }
-        """)
+            }""")
         password_field_layout.addWidget(self.password_field)
         password_field_layout.addWidget(self.peek_button)
         password_layout.addLayout(password_field_layout)
@@ -352,9 +411,8 @@ class PyKryptor(QWidget):
                 QProgressBar::chunk {
                     background-color: #FF4444;
                     border-radius: 2px;
-                }
-            """)
-            self.strength_label = QLabel("Password strength: X")
+                }""")
+            self.strength_label = QLabel("Password strength: N/A")
             self.strength_label.setStyleSheet("color: #888888; font-size: 9pt; margin-top: 2px;")
             self.strength_label.setWordWrap(True)
             password_layout.addWidget(self.strength_bar)
@@ -364,6 +422,27 @@ class PyKryptor(QWidget):
             self.strength_bar = None
             self.strength_label = None
         password_group.setLayout(password_layout)
+        self.password_group = password_group
+        keyfile_group = QGroupBox("Keyfile selection")
+        keyfile_layout = QVBoxLayout()
+        keyfile_input_layout = QHBoxLayout()
+        self.main_keyfile_path_field = QLineEdit()
+        self.main_keyfile_path_field.setPlaceholderText("Select or generate a keyfile...")
+        self.main_keyfile_path_field.setReadOnly(True)
+        self.main_browse_keyfile_button = QPushButton("Browse")
+        self.main_browse_keyfile_button.clicked.connect(self.browse_main_keyfile)
+        self.main_generate_keyfile_button = QPushButton("Generate")
+        self.main_generate_keyfile_button.clicked.connect(self.generate_main_keyfile)
+        keyfile_input_layout.addWidget(self.main_keyfile_path_field)
+        keyfile_input_layout.addWidget(self.main_browse_keyfile_button)
+        keyfile_input_layout.addWidget(self.main_generate_keyfile_button)
+        keyfile_layout.addLayout(keyfile_input_layout)
+        keyfile_group.setLayout(keyfile_layout)
+        self.keyfile_group = keyfile_group
+        self.keyfile_group.setVisible(False)
+        self.auth_mode_hint = QLabel("Press CTRL + SHIFT + K to switch to keyfile mode")
+        self.auth_mode_hint.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.auth_mode_hint.setStyleSheet("color: #888888; font-size: 8pt; margin-top: 5px;")
         button_layout = QHBoxLayout()
         self.encrypt_button = QPushButton("Encrypt")
         icon_path = get_resource_path(os.path.join("img", "encrypt_img.png"))
@@ -380,7 +459,9 @@ class PyKryptor(QWidget):
         self.status_label = QLabel("[INFO] Ready.")
         self.status_label.setStyleSheet("color: #7FFF00;")
         main_layout.addWidget(input_group)
-        main_layout.addWidget(password_group)
+        main_layout.addWidget(self.password_group)
+        main_layout.addWidget(self.keyfile_group)
+        main_layout.addWidget(self.auth_mode_hint)
         main_layout.addLayout(button_layout)
         main_layout.addWidget(self.status_label)
         main_layout.addStretch()
@@ -402,12 +483,132 @@ class PyKryptor(QWidget):
             "entropy_threshold": self.entropy_threshold,
             "secure_clear": self.secure_clear,
             "add_recovery_data": self.add_recovery_data,
-            "chunk_size_mb": self.chunk_size_mb}
+            "chunk_size_mb": self.chunk_size_mb,
+            "use_usb_key": False}
         dialog = ArchiveCreationDialog(parent=self, current_settings=current_settings)
         if dialog.exec() == QDialog.Accepted:
             archive_data = dialog.archive_data
             if archive_data:
                 self.start_archive_creation(archive_data)
+
+    def start_operation(self, operation):
+        files = self.files_to_process
+        if not files:
+            text = self.input_path_field.text()
+            if text:
+                files = [f.strip() for f in text.split(";")]
+        
+        if not files:
+            if not self.mute_sfx:
+                self.sound_manager.play_sound("error.wav")
+            dialog = CustomDialog("Error", "Please select at least one file or folder.", self)
+            dialog.exec()
+            return
+            
+        keyfile_path = None
+        if self.keyfile_group.isVisible():
+            keyfile_path = self.main_keyfile_path_field.text()
+            if not keyfile_path or not os.path.exists(keyfile_path):
+                self.play_warning_sound()
+                dialog = CustomDialog("Warning", "Yo, tis not a vaid keyfile.", self)
+                dialog.exec()
+                return
+            password = ""
+        else:
+            password = self.password_field.text()
+            if not password and operation == "encrypt":
+                 self.play_warning_sound()
+                 dialog = CustomDialog("Warning", "Please enter a password.", self)
+                 dialog.exec()
+                 return
+            if not password and operation == "decrypt":
+                 self.play_warning_sound()
+                 dialog = CustomDialog("Warning", "Please enter a password.", self)
+                 dialog.exec()
+                 return
+        usb_key_path = None
+        if operation == "decrypt":
+            try:
+                with open(files[0], "rb") as f:
+                    from core import MAGIC_NUMBER, FLAG_USB_KEY
+                    magic = f.read(len(MAGIC_NUMBER))
+                    if magic == MAGIC_NUMBER or magic == b"PYLI\x00":
+                        f.seek(len(MAGIC_NUMBER) + 2)
+                        flags = struct.unpack("!B", f.read(1))[0]
+                        if (flags & FLAG_USB_KEY) != 0:
+                            dialog = USBSelectionDialog(self)
+                            if dialog.exec() != QDialog.Accepted or not dialog.usb_path:
+                                self.play_warning_sound()
+                                self.status_label.setText("[ERROR] USB-codec required but not selected.")
+                                return
+                            usb_key_path = dialog.usb_path
+            except Exception as e:
+                pass
+        self.status_label.setText(f"[INFO] Starting {operation}...")
+        self.encrypt_button.setEnabled(False)
+        self.decrypt_button.setEnabled(False)
+        self.create_archive_button.setEnabled(False)
+        self.progress_dialog = ProgressDialog(f"{operation.capitalize()}ing...", self)
+        self.progress_dialog.canceled.connect(self.cancel_operation)
+        self.progress_dialog.show()
+        self.batch_processor = BatchProcessorThread(
+            operation=operation,
+            file_paths=files,
+            password=password,
+            custom_ext=self.custom_ext,
+            output_dir=self.output_dir,
+            new_name_type=self.new_name_type,
+            chunk_size=self.chunk_size_mb * 1024 * 1024,
+            kdf_iterations=self.kdf_iterations,
+            secure_clear=self.secure_clear,
+            add_recovery_data=self.add_recovery_data,
+            compression_level=self.compression_level,
+            archive_mode=(self.archive_mode and operation == "encrypt" and len(files) > 1),
+            use_argon2=self.use_argon2,
+            argon2_time_cost=self.argon2_time_cost,
+            argon2_memory_cost=self.argon2_memory_cost,
+            argon2_parallelism=self.argon2_parallelism,
+            aead_algorithm=self.aead_algorithm,
+            pbkdf2_hash=self.pbkdf2_hash,
+            compression_detection_mode=self.compression_detection,
+            entropy_threshold=self.entropy_threshold,
+            keyfile_path=keyfile_path,
+            usb_key_path=usb_key_path, 
+            parent=self)
+        self.batch_processor.batch_progress_updated.connect(self.progress_dialog.update_batch_progress)
+        self.batch_processor.status_message.connect(lambda msg: self.progress_dialog.file_label.setText(msg))
+        self.batch_processor.progress_updated.connect(lambda p: self.progress_dialog.file_progress_bar.setValue(int(p)))
+        self.batch_processor.finished.connect(self.on_archive_creation_finished) 
+        self.batch_processor.start()
+
+    def toggle_authentication_mode(self):
+        if self.password_group.isVisible():
+            self.password_group.setVisible(False)
+            self.keyfile_group.setVisible(True)
+            self.password_field.clear()
+            self.auth_mode_hint.setText("Press CTRL + SHIFT + K to switch to password mode")
+            if not self.mute_sfx: self.sound_manager.play_sound("info.wav")
+        else:
+            self.keyfile_group.setVisible(False)
+            self.password_group.setVisible(True)
+            self.main_keyfile_path_field.clear()
+            self.auth_mode_hint.setText("Press CTRL + SHIFT + K to switch to keyfile mode")
+            if not self.mute_sfx: self.sound_manager.play_sound("info.wav")
+
+    def browse_main_keyfile(self):
+        file, _ = QFileDialog.getOpenFileName(self, "Select keyfile", "", "PyKryptor keyfiles (*.pykx);;All files (*)")
+        if file:
+            self.main_keyfile_path_field.setText(file)
+
+    def generate_main_keyfile(self):
+        dialog = KeyfileGeneratorDialog(self)
+        dialog.exec()
+
+
+    def cancel_operation(self):
+        if self.batch_processor:
+            self.batch_processor.cancel()
+            self.status_label.setText("[INFO] Canceling operation...")
 
     def start_archive_creation(self, archive_data): ## ¯\_(ツ)_/¯
         self.status_label.setText("[INFO] Creating archive...")
@@ -438,6 +639,7 @@ class PyKryptor(QWidget):
             aead_algorithm=archive_data["aead_algorithm"],
             pbkdf2_hash=archive_data["pbkdf2_hash"],
             usb_key_path=archive_data.get("usb_key_path"),
+            keyfile_path=archive_data.get("keyfile_path"),
             archive_name=archive_data["archive_name"],
             compression_detection_mode=archive_data.get("compression_detection", "legacy"),
             entropy_threshold=archive_data.get("entropy_threshold", 7.5),
@@ -457,15 +659,15 @@ class PyKryptor(QWidget):
         if errors:
             if not self.mute_sfx:
                 self.sound_manager.play_sound("error.wav")
-            error_message = "Archive creation failed:\n" + "\n".join(errors)
-            self.status_label.setText("[ERROR] Archive creation failed.")
-            dialog = ErrorExportDialog("Archive creation failed", error_message, errors, self)
+            error_message = "Operation failed:\n" + "\n".join(errors)
+            self.status_label.setText("[ERROR] Operation failed.")
+            dialog = ErrorExportDialog("Operation failed", error_message, errors, self)
             dialog.exec()
         else:
             if not self.mute_sfx:
                 self.sound_manager.play_sound("success.wav")
-            self.status_label.setText("[INFO] Archive created successfully.")
-            dialog = CustomDialog("Success", "Archive created successfully; no errors caught.", self)
+            self.status_label.setText("[INFO] Operation successful.")
+            dialog = CustomDialog("Success", "Operation completed successfully; no errors caught.", self)
             dialog.exec()
 
     def create_settings_general_tab(self):
@@ -495,6 +697,14 @@ class PyKryptor(QWidget):
         layout.addWidget(output_group)
         layout.addStretch()
         return general_tab
+    
+    def select_output_dir(self):
+        dir_dialog = QFileDialog()
+        dir_dialog.setFileMode(QFileDialog.Directory)
+        if dir_dialog.exec():
+            selected_dir = dir_dialog.selectedFiles()[0]
+            self.output_dir_field.setText(selected_dir)
+            self.output_dir = selected_dir
 
     def create_settings_audio_tab(self):
         audio_tab = QWidget()
@@ -503,12 +713,52 @@ class PyKryptor(QWidget):
         audio_layout = QFormLayout()
         self.mute_sfx_checkbox = QCheckBox()
         self.mute_sfx_checkbox.setChecked(self.mute_sfx)
-        audio_layout.addRow("Mute sfx:", self.mute_sfx_checkbox)
+        audio_layout.addRow("Mute SFX:", self.mute_sfx_checkbox)
         self.mute_sfx_checkbox.setToolTip("Mute sfx\n\nMute all sound effects in PyKryptor.")
+        volume_layout = QHBoxLayout()
+        self.volume_slider = QSlider(Qt.Horizontal)
+        self.volume_slider.setRange(0, 100)
+        self.volume_slider.setValue(int(self.sfx_volume * 100))
+        self.volume_slider.valueChanged.connect(self.update_volume)
+        self.volume_label = QLabel(f"{int(self.sfx_volume * 100)}%")
+        volume_layout.addWidget(self.volume_slider)
+        volume_layout.addWidget(self.volume_label)
+        audio_layout.addRow("SFX volume:", volume_layout)
+        self.volume_slider.setToolTip("SFX volume\n\nAdjust how loud these annoying ass sound effects are.")
         audio_group.setLayout(audio_layout)
         layout.addWidget(audio_group)
         layout.addStretch()
         return audio_tab
+    
+    def update_volume(self, value):
+        self.sfx_volume = value / 100.0
+        self.volume_label.setText(f"{value}%")
+        self.sound_manager.set_volume(self.sfx_volume)
+
+    def update_settings(self):
+        self.custom_ext = self.custom_ext_field.text()
+        self.output_dir = self.output_dir_field.text()
+        self.new_name_type = self.new_name_type_combo.currentText()
+        self.mute_sfx = self.mute_sfx_checkbox.isChecked()
+        self.archive_mode = self.archive_mode_checkbox.isChecked()
+        self.aead_algorithm = self.aead_map_rev.get(self.aead_combo.currentText(), "aes-gcm")
+        self.use_argon2 = self.use_argon2_checkbox.isChecked()
+        self.kdf_iterations = self.kdf_iterations_spinbox.value()
+        self.pbkdf2_hash = self.pbkdf2_hash_combo.currentText()
+        self.argon2_time_cost = self.argon2_time_spinbox.value()
+        self.argon2_memory_cost = self.argon2_memory_spinbox.value()
+        self.argon2_parallelism = self.argon2_parallelism_spinbox.value()
+        self.compression_level = self.compression_mapping[self.compression_combo.currentText()]
+        self.compression_detection = self.detection_map_rev.get(self.detection_mode_combo.currentText(), "legacy")
+        self.entropy_threshold = self.entropy_threshold_spinbox.value()
+        self.secure_clear = self.secure_clear_checkbox.isChecked()
+        self.add_recovery_data = self.recovery_checkbox.isChecked()
+        self.chunk_size_mb = self.chunk_size_spinbox.value()
+        self.save_settings()
+        if not self.mute_sfx:
+             self.sound_manager.play_sound("success.wav")
+        dialog = CustomDialog("Settings saved", "Your settings have been saved successfully.", self)
+        dialog.exec()
 
     def handle_warning_checkbox(self, state, checkbox, title, message):
         if state:
@@ -516,6 +766,10 @@ class PyKryptor(QWidget):
             dialog = CustomDialog(title, message, self)
             if dialog.exec() != QDialog.Accepted:
                 checkbox.setChecked(False)
+
+    def play_warning_sound(self):
+        if not self.mute_sfx:
+            self.sound_manager.play_sound("info.wav")
 
     def handle_argon2_checkbox(self, state):
         if state and not ARGON2_AVAILABLE:
@@ -536,8 +790,7 @@ class PyKryptor(QWidget):
         scroll_area.setWidgetResizable(True)
         scroll_area.setStyleSheet("""
             QScrollArea { border: none; }
-            QGroupBox { margin-bottom: 10px; }
-        """)
+            QGroupBox { margin-bottom: 10px; }""")
         content_widget = QWidget()
         layout = QVBoxLayout(content_widget)
         encryption_group = QGroupBox("Encryption")
@@ -545,6 +798,7 @@ class PyKryptor(QWidget):
         self.aead_combo = QComboBox()
         self.aead_combo.addItems(["AES-256-GCM", "ChaCha20-Poly1305"])
         aead_map = {"aes-gcm": "AES-256-GCM", "chacha20-poly1305": "ChaCha20-Poly1305"}
+        self.aead_map_rev = {v: k for k, v in aead_map.items()}
         self.aead_combo.setCurrentText(aead_map.get(self.aead_algorithm, "AES-256-GCM"))
         self.aead_combo.setToolTip("AEAD algorithm\n\nChoose between AES-256-GCM or\nChaCha20-Poly1305 for your encryption algorithm.")
         self.aead_combo.currentTextChanged.connect(self.update_aead_warning)
@@ -574,7 +828,6 @@ class PyKryptor(QWidget):
         self.pbkdf2_hash_combo = QComboBox()
         self.pbkdf2_hash_combo.addItems(["sha-256", "sha-512"])
         self.pbkdf2_hash_combo.setCurrentText(self.pbkdf2_hash)
-        self.pbkdf2_hash_combo.currentTextChanged.connect(self.update_pbkdf2_hash)
         kdf_layout.addRow("PBKDF2 hash type:", self.pbkdf2_hash_combo)
         self.pbkdf2_hash_combo.setToolTip("PBKDF2 hash type\n\nChoose if PBKDF2 will use\nSHA-256 or SHA-512 for key hashing.")
         kdf_layout.addRow("PBKDF2 iterations:", self.kdf_iterations_spinbox)
@@ -606,20 +859,22 @@ class PyKryptor(QWidget):
         compression_layout = QFormLayout()
         self.compression_combo = QComboBox()
         self.compression_combo.addItems(["None", "Normal (fast)", "Best (slow-er)", "ULTRAKILL (probably slow)", "[L] ULTRAKILL (???)"])
-        compression_mapping = {"None": "none", "Normal (fast)": "normal", "Best (slow-er)": "best", "ULTRAKILL (probably slow)": "ultrakill", "[L] ULTRAKILL (???)": "[L] ultrakill"}
-        current_text = [k for k, v in compression_mapping.items() if v == self.compression_level][0]
+        self.compression_mapping = {"None": "none", "Normal (fast)": "normal", "Best (slow-er)": "best", "ULTRAKILL (probably slow)": "ultrakill", "[L] ULTRAKILL (???)": "[L] ultrakill"}
+        current_text = [k for k, v in self.compression_mapping.items() if v == self.compression_level][0]
         self.compression_combo.setCurrentText(current_text)
         self.compression_combo.setToolTip("Compression level\n\nCompression makes (or tries) to make files smaller,\nif you want speed it is NOT recommended\nto use compression at all.")
         compression_layout.addRow("Compression level:", self.compression_combo)
         self.detection_mode_combo = QComboBox()
-        self.detection_mode_combo.addItems(["Legacy (extension)", "Magic bytes", "Entropy heuristic", "Magic bytes + Entropy"])
-        detection_map = {
+        self.detection_mode_combo.addItems(["Legacy (extension)", "Magic bytes", "Entropy heuristic", "Magic bytes + Entropy", "None (attempt all)"])
+        self.detection_map = {
             "legacy": "Legacy (extension)",
             "magic": "Magic bytes",
             "entropy": "Entropy heuristic",
-            "magic+entropy": "Magic bytes + Entropy"}
-        self.detection_mode_combo.setCurrentText(detection_map.get(self.compression_detection, "Legacy (extension)"))
-        self.detection_mode_combo.setToolTip("Detection mode\n\nWe use the detection mode to check for already compressed\nfiles with PyKryptor. Each one written in C has it's own\nlittle quirks...\n\nLegacy - only checks for certain file extensions and skips\nthose when compressing.\n\nMagic bytes - we use said signatures; as used;\nto check if the file has compressed data or markings too.\n\nEntropy heuristic - samples around 8KB of a non-determined file to see if\nthe compression ratio is worth, or not.\n\nMagic bytes + Entropy - combines 2nd and 3rd methods into one, most accurate.")
+            "magic+entropy": "Magic bytes + Entropy",
+            "none": "None (attempt all)"}
+        self.detection_map_rev = {v: k for k, v in self.detection_map.items()}
+        self.detection_mode_combo.setCurrentText(self.detection_map.get(self.compression_detection, "Legacy (extension)"))
+        self.detection_mode_combo.setToolTip("Detection mode\n\nWe use the detection mode to check for already compressed\nfiles with PyKryptor. Each one written in C has it's own\nlittle quirks...\n\nLegacy - only checks for certain file extensions and skips\nthose when compressing.\n\nMagic bytes - we use said signatures; as used;\nto check if the file has compressed data or markings too.\n\nEntropy heuristic - samples around 8KB of a non-determined file to see if\nthe compression ratio is worth, or not.\n\nMagic bytes + Entropy - combines 2nd and 3rd methods into one, most accurate.\n\nNone - disables skipping entirely; always attempts compression.")
         compression_layout.addRow("Detection mode:", self.detection_mode_combo)
         self.entropy_threshold_spinbox = QDoubleSpinBox()
         self.entropy_threshold_spinbox.setRange(6.0, 8.0)
@@ -628,12 +883,15 @@ class PyKryptor(QWidget):
         self.entropy_threshold_spinbox.setValue(self.entropy_threshold)
         self.entropy_threshold_spinbox.setToolTip("Entropy threshold\n\nThe higher an entropy value is the less likely it\nis to detect compression. Range is from 6.0-8.0;\ndefault is 7.5, and this setting only applies to\nmethods that include entropy.")
         compression_layout.addRow("Entropy threshold:", self.entropy_threshold_spinbox)
-        from cmp import cmp_check_available
-        if not cmp_check_available():
-            status_label = QLabel("Warning: the C library for compression detection could\nnot be loaded, the legacy Python based\n(extensions) is in use.")
-            status_label.setStyleSheet("color: #FFA500; font-size: 8pt;")
-            status_label.setWordWrap(True)
-            compression_layout.addWidget(status_label) 
+        try:
+             from cmp import cmp_check_available
+             if not cmp_check_available():
+                status_label = QLabel("Warning: the C library for compression detection could\nnot be loaded, the legacy Python based\n(extensions) is in use.")
+                status_label.setStyleSheet("color: #FFA500; font-size: 8pt;")
+                status_label.setWordWrap(True)
+                compression_layout.addWidget(status_label) 
+        except ImportError:
+            pass
         compression_group.setLayout(compression_layout)
         security_group = QGroupBox("Security / data integrity")
         security_layout = QFormLayout()
@@ -803,304 +1061,25 @@ class PyKryptor(QWidget):
 
     def load_disclaimer(self):
         try:
-            disclaimer_path = get_resource_path(os.path.join("txts", "disclaimer.txt"))
-            with open(disclaimer_path, "r", encoding="utf-8") as f:
-                return f.read().strip()
+            with open(get_resource_path(os.path.join("txts", "disclaimer.txt")), "r", encoding="utf-8") as f:
+                return f.read()
         except Exception:
-            return "Disclaimer file not found; shame for ya."
+            return "Disclaimer not found."
 
     def load_info(self):
         try:
-            info_path = get_resource_path(os.path.join("txts", "info.txt"))
-            with open(info_path, "r", encoding="utf-8") as f:
-                return f.read().strip()
+            with open(get_resource_path(os.path.join("txts", "info.txt")), "r", encoding="utf-8") as f:
+                return f.read()
         except Exception:
-            return "Info file not found; ball is out nerd."
+            return "Info not found."
 
     def load_log(self):
         try:
-            changelogs_path = get_resource_path(os.path.join("txts", "changelog.txt"))
-            with open(changelogs_path, "r", encoding="utf-8") as f:
-                return f.read().strip()
+            with open(get_resource_path(os.path.join("txts", "changelog.txt")), "r", encoding="utf-8") as f:
+                return f.read()
         except Exception:
-            return "Changelogs file not found; perhaps guess what's new?"
-
-    def update_settings(self):
-        compression_mapping = {"None": "none", "Normal (fast)": "normal", "Best (slow-er)": "best", "ULTRAKILL (probably slow)": "ultrakill", "[L] ULTRAKILL (???)": "[L] ultrakill"}
-        detection_map_rev = {
-            "Legacy (extension)": "legacy",
-            "Magic bytes": "magic",
-            "Entropy heuristic": "entropy",
-            "Magic bytes + Entropy": "magic+entropy"}
-        aead_map_rev = {"AES-256-GCM": "aes-gcm", "ChaCha20-Poly1305": "chacha20-poly1305"}
-        self.aead_algorithm = aead_map_rev.get(self.aead_combo.currentText(), "aes-gcm")
-        self.compression_level = compression_mapping[self.compression_combo.currentText()]
-        self.compression_detection = detection_map_rev.get(self.detection_mode_combo.currentText(), "legacy")
-        self.entropy_threshold = self.entropy_threshold_spinbox.value()
-        self.custom_ext = self.custom_ext_field.text()
-        self.output_dir = self.output_dir_field.text()
-        self.new_name_type = self.new_name_type_combo.currentText()
-        self.mute_sfx = self.mute_sfx_checkbox.isChecked()
-        self.chunk_size_mb = self.chunk_size_spinbox.value()
-        self.kdf_iterations = self.kdf_iterations_spinbox.value()
-        self.secure_clear = self.secure_clear_checkbox.isChecked()
-        self.add_recovery_data = self.recovery_checkbox.isChecked()
-        self.archive_mode = self.archive_mode_checkbox.isChecked()
-        self.use_argon2 = self.use_argon2_checkbox.isChecked() and ARGON2_AVAILABLE
-        self.argon2_time_cost = self.argon2_time_spinbox.value()
-        self.argon2_memory_cost = self.argon2_memory_spinbox.value()
-        self.argon2_parallelism = self.argon2_parallelism_spinbox.value()
-        if self.output_dir and not os.path.exists(self.output_dir):
-            desktop_path = os.path.join(os.path.expanduser("~"), "Desktop")
-            if not os.path.exists(desktop_path): desktop_path = os.path.expanduser("~")
-            self.output_dir = desktop_path
-            self.output_dir_field.setText(self.output_dir)
-            self.play_warning_sound()
-            dialog = CustomDialog("Warning", f"Output directory was invalid and changed to:\n{desktop_path}", self)
-            dialog.exec()
-        if not self.mute_sfx: self.sound_manager.play_sound("success.wav")
-        dialog = CustomDialog("Success", "Settings have been saved to 'config.json'", self)
-        dialog.exec()
-        self.save_settings()
-        self.status_label.setText("[INFO] Settings saved (hopefully)")
-
-    def select_files(self):
-        file_dialog = QFileDialog()
-        file_dialog.setFileMode(QFileDialog.ExistingFiles)
-        if file_dialog.exec():
-            self.files_to_process = file_dialog.selectedFiles()
-            if len(self.files_to_process) == 1: self.input_path_field.setText(self.files_to_process[0])
-            else: self.input_path_field.setText(f"{len(self.files_to_process)} files selected.")
-            self.status_label.setText("[INFO] Files ready to process.")
-
-    def select_output_dir(self):
-        dir_dialog = QFileDialog()
-        dir_dialog.setFileMode(QFileDialog.Directory)
-        if dir_dialog.exec():
-            selected_dir = dir_dialog.selectedFiles()[0]
-            if os.path.exists(selected_dir):
-                self.output_dir = selected_dir
-                self.output_dir_field.setText(self.output_dir)
-            else:
-                dialog = CustomDialog("Warning", "Selected directory does not exist, somehow...?", self)
-                dialog.exec()
-
-    def start_operation(self, operation):
-        password = self.password_field.text()
-        if not self.files_to_process:
-            self.play_warning_sound()
-            dialog = CustomDialog("Warning", "Maybe choose some file(s) first, pal?", self)
-            dialog.exec()
-            return
-        if not password:
-            self.play_warning_sound()
-            dialog = CustomDialog("Warning", "No password; you nitwit.", self)
-            dialog.exec()
-            return
-        usb_key_path = None
-        if operation == "decrypt":
-            try:
-                with open(self.files_to_process[0], "rb") as f:
-                    from core import MAGIC_NUMBER, FLAG_USB_KEY
-                    magic = f.read(len(MAGIC_NUMBER))
-                    if magic == MAGIC_NUMBER or magic == b"PYLI\x00":
-                        f.seek(len(MAGIC_NUMBER) + 2)
-                        flags = struct.unpack("!B", f.read(1))[0]
-                        if (flags & FLAG_USB_KEY) != 0:
-                            dialog = USBSelectionDialog(self)
-                            if dialog.exec() != QDialog.Accepted or not dialog.usb_path:
-                                self.play_warning_sound()
-                                self.status_label.setText("[ERROR] USB-codec required but not selected.")
-                                return
-                            usb_key_path = dialog.usb_path
-            except Exception as e:
-                pass
-        self.status_label.setText("[INFO] Starting...")
-        self.encrypt_button.setEnabled(False)
-        self.decrypt_button.setEnabled(False)
-        self.create_archive_button.setEnabled(False)
-        self.progress_dialog = ProgressDialog("Processing...", self)
-        self.progress_dialog.canceled.connect(self.cancel_operation)
-        self.progress_dialog.show()    
-        self.batch_processor = BatchProcessorThread(
-            operation=operation, file_paths=self.files_to_process, password=password,
-            custom_ext=self.custom_ext, output_dir=self.output_dir, new_name_type=self.new_name_type,
-            chunk_size=self.chunk_size_mb * 1024 * 1024, kdf_iterations=self.kdf_iterations,
-            secure_clear=self.secure_clear, add_recovery_data=self.add_recovery_data,
-            compression_level=self.compression_level, archive_mode=self.archive_mode,
-            use_argon2=self.use_argon2, argon2_time_cost=self.argon2_time_cost,
-            argon2_memory_cost=self.argon2_memory_cost, argon2_parallelism=self.argon2_parallelism,
-            aead_algorithm=self.aead_algorithm, pbkdf2_hash=self.pbkdf2_hash,
-            usb_key_path=usb_key_path, compression_detection_mode=self.compression_detection,
-            entropy_threshold=self.entropy_threshold, parent=self) ## not doing a one-liner for this one 😒
-        self.batch_processor.batch_progress_updated.connect(self.progress_dialog.update_batch_progress)
-        self.batch_processor.status_message.connect(lambda msg: self.progress_dialog.file_label.setText(msg))
-        self.batch_processor.progress_updated.connect(lambda p: self.progress_dialog.file_progress_bar.setValue(int(p)))
-        self.batch_processor.finished.connect(self.on_batch_finished)
-        self.batch_processor.start()
-
-    def update_aead_algorithm(self, text):
-        self.aead_algorithm = text.lower()
-        self.save_settings()
-
-    def update_pbkdf2_hash(self, text):
-        self.pbkdf2_hash = text.lower()
-        self.save_settings()
-
-    def toggle_password_visibility(self, checked):
-        if checked:
-            self.password_field.setEchoMode(QLineEdit.Normal)
-            icon_path = get_resource_path(os.path.join("img", "hide_pass_img.png"))
-            self.peek_button.setIcon(QIcon(icon_path))
-            self.peek_button.setIconSize(QSize(32, 32))
-        else:
-            self.password_field.setEchoMode(QLineEdit.Password)
-            icon_path = get_resource_path(os.path.join("img", "show_pass_img.png"))
-            self.peek_button.setIcon(QIcon(icon_path))
-            self.peek_button.setIconSize(QSize(32, 32))
-
-    def update_password_strength(self, password):
-        if not ZXCVBN_AVAILABLE or not self.strength_bar:
-            return
-        if not password:
-            self.strength_bar.setValue(0)
-            self.strength_bar.setStyleSheet("""
-                QProgressBar {
-                    border: 1px solid #5A5A5A;
-                    background-color: #3C3C3C;
-                    border-radius: 3px;
-                }
-                QProgressBar::chunk {
-                    background-color: #FF4444;
-                    border-radius: 2px;
-                }""")
-            self.strength_label.setText("Password strength: X")
-            self.strength_label.setStyleSheet("color: #888888; font-size: 9pt;")
-            return
-        if len(password) > 72:
-            self.strength_bar.setValue(4)
-            self.strength_bar.setStyleSheet("""
-                QProgressBar {
-                    border: 1px solid #5A5A5A;
-                    background-color: #3C3C3C;
-                    border-radius: 3px;
-                }
-                QProgressBar::chunk {
-                    background-color: #44DD44;
-                    border-radius: 2px;
-                }""")
-            self.strength_label.setText("Password strength: Strong (length: 72+ chars)")
-            self.strength_label.setStyleSheet("color: #44DD44; font-size: 9pt;")
-            return
-        result = zxcvbn(password)
-        score = result["score"]
-        self.strength_bar.setValue(score)
-        colors = {
-            0: ("#FF4444", "Really?"),
-            1: ("#FF8844", "Weak"),
-            2: ("#FFAA44", "Fair"),
-            3: ("#88DD44", "Good"),
-            4: ("#44DD44", "Strong")}
-        color, label = colors.get(score, ("#FF4444", "Really?"))
-        self.strength_bar.setStyleSheet(f"""
-            QProgressBar {{
-                border: 1px solid #5A5A5A;
-                background-color: #3C3C3C;
-                border-radius: 3px;
-            }}
-            QProgressBar::chunk {{
-                background-color: {color};
-                border-radius: 2px;
-            }}""")
-        crack_time = result.get("crack_times_display", {}).get("offline_slow_hashing_1e4_per_second", "unknown")
-        status_text = f"Password strength: {label} (crack time: {crack_time})"
-        if score < 2:
-            warning = result.get("feedback", {}).get("warning", "")
-            if warning:
-                warning = warning.replace("This is a top 10 common password", "Common password")
-                warning = warning.replace("This is a top 100 common password", "Common password")
-                warning = warning.replace("This is similar to a commonly used password", "Similar to common")
-                warning = warning.replace("Straight rows of keys are easy to guess", "Keyboard pattern")
-                warning = warning.replace("Short keyboard patterns are easy to guess", "Keyboard pattern")
-                warning = warning.replace("Repeats like 'aaa' are easy to guess", "Repeated chars")
-                warning = warning.replace("Repeats like 'abcabcabc' are only slightly harder to guess than 'abc'", "Pattern repeat")
-                warning = warning.replace("Sequences like abc or 6543 are easy to guess", "Sequence")
-                warning = warning.replace("Recent years are easy to guess", "Contains year")
-                warning = warning.replace("Dates are often easy to guess", "Contains date")
-                status_text = f"{label} - {warning}"
-        self.strength_label.setText(status_text)
-        self.strength_label.setStyleSheet(f"color: {color}; font-size: 9pt;")
-
-    def play_warning_sound(self):
-        if not self.mute_sfx:
-            self.sound_manager.play_sound("info.wav")
-
-    def cancel_operation(self):
-        if self.batch_processor and self.batch_processor.isRunning():
-            self.batch_processor.cancel()
-        if self.progress_dialog: self.progress_dialog.close()
-        self.encrypt_button.setEnabled(True)
-        self.decrypt_button.setEnabled(True)
-        self.create_archive_button.setEnabled(True)
-        self.play_warning_sound()
-        self.status_label.setText("[INFO] Operation canceled.")
-
-    def on_batch_finished(self, errors):
-        if self.progress_dialog: self.progress_dialog.close()
-        self.encrypt_button.setEnabled(True)
-        self.decrypt_button.setEnabled(True)
-        self.create_archive_button.setEnabled(True)
-        if errors:
-            if not self.mute_sfx: self.sound_manager.play_sound("error.wav")
-            error_message = "Some file(s) or archive(s) failed to process:\n" + "\n".join(errors)
-            self.status_label.setText("[ERROR] Something failed.")
-            dialog = ErrorExportDialog("Ahh kaput...", error_message, errors, self)
-            dialog.exec()
-        else:
-            if not self.mute_sfx: self.sound_manager.play_sound("success.wav")
-            self.status_label.setText("[INFO] All file(s) / archive(s) processed successfully.")
-            dialog = CustomDialog("Success", "All file(s) / archive(s) processed successfully.", self)
-            dialog.exec()
-
-    def dragEnterEvent(self, event):
-        if event.mimeData().hasUrls(): event.acceptProposedAction()
-
-    def dropEvent(self, event):
-        urls = [url.toLocalFile() for url in event.mimeData().urls()]
-        self.files_to_process.clear()
-        for url in urls:
-            if os.path.isdir(url):
-                for root, _, files in os.walk(url):
-                    for name in files:
-                        self.files_to_process.append(os.path.join(root, name))
-            else:
-                self.files_to_process.append(url)
-        if len(self.files_to_process) == 1: self.input_path_field.setText(self.files_to_process[0])
-        else: self.input_path_field.setText(f"{len(self.files_to_process)} files selected.")
-        self.status_label.setText("[INFO] File(s) ready to process.")
-        event.acceptProposedAction()
-
-    def closeEvent(self, event):
-        sys.stdout = sys.__stdout__
-        sys.stderr = sys.__stderr__
-        if self.batch_processor and self.batch_processor.isRunning(): self.batch_processor.cancel()
-        self.save_settings()
-        self.sound_manager.unload()
-        event.accept()
-
-def _log_unhandled(exc_type, exc_value, exc_tb):
-    try:
-        import traceback
-        log_base = os.path.dirname(sys.executable) if getattr(sys, "frozen", False) else os.getcwd()
-        logpath = os.path.join(log_base, "pykryptor_startup.log")
-        with open(logpath, "a", encoding="utf-8") as f:
-            f.write("Unhandled exception:\n")
-            traceback.print_exception(exc_type, exc_value, exc_tb, file=f)
-    except Exception:
-        pass
-
-sys.excepthook = _log_unhandled
-
+            return "Changelogs not found."
+        
 if __name__ == "__main__":
     try:
         app = QApplication(sys.argv)
@@ -1113,17 +1092,29 @@ if __name__ == "__main__":
             sys.stdout = stream_redirect
             sys.stderr = stream_redirect
         window = PyKryptor()
-        ## rm_pycache() <-- shit slows down the app like CRAZY
+        if sys.platform == "win32":
+            try:
+                hwnd = ctypes.windll.kernel32.GetConsoleWindow()
+                if hwnd:
+                    ctypes.windll.user32.ShowWindow(hwnd, 0) # SW_HIDE
+                ctypes.windll.kernel32.FreeConsole()
+                sys.stdout = None
+                sys.stderr = None
+            except Exception:
+                pass
         if window.debug_console:
             stream_redirect.connect_target(window.debug_console.append_text)
+            
         window.show()
-        print(Fore.GREEN + "[DEV PRINT] Hello my dear World..." + Style.RESET_ALL)
         sys.exit(app.exec())
     except Exception:
         import traceback as _tb
-        _tb.print_exc()
         try:
-            log_base = os.path.dirname(sys.executable) if getattr(sys, "frozen", False) else os.getcwd()
+           _tb.print_exc()
+        except:
+           pass
+        try:
+            log_base = os.path.dirname(sys.executable)if getattr(sys, "frozen", False) else os.getcwd() ## catch a/e
             logpath = os.path.join(log_base, "pykryptor_startup.log")
             with open(logpath, "a", encoding="utf-8") as f:
                 f.write("Startup exception:\n")
