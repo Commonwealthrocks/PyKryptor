@@ -1,5 +1,5 @@
 ## cli.py
-## last updated: 27/12/2025 <d/m/y>
+## last updated: 10/02/2026 <d/m/y>
 ## p-y-k-x
 import os
 import sys
@@ -26,6 +26,7 @@ class CLIState:
         self.operation = None
         self.files = []
         self.password = None
+        self.keyfile_path = None
         self.custom_ext = "dat"
         self.output_dir = ""
         self.new_name_type = "keep"
@@ -122,6 +123,7 @@ Examples:
   pykryptor -ls state.json -d -p "test" -f ./file.dat
   pykryptor -e -p "pass" -f ./a.txt ./b.txt -o ./output/
   pykryptor -e -p "pass" -f ./file.txt --usb-key E:\\
+  pykryptor -e -k ./my.key -f ./secret.txt
   pykryptor --usb-list
   pykryptor --usb-setup E:\\
   pykryptor -e -p "pass" -f ./a.txt ./b.txt --archive --archive-name myarchive.dat
@@ -130,6 +132,7 @@ Examples:
         op_group.add_argument("-e", "--encrypt", action="store_true", help="Encrypt files")
         op_group.add_argument("-d", "--decrypt", action="store_true", help="Decrypt files")
         parser.add_argument("-p", "--password", help="Encryption/decryption password")
+        parser.add_argument("-k", "--keyfile", help="Path to keyfile")
         parser.add_argument("-f", "--files", nargs="+", help="File(s) to process (use . prefix for relative paths)")
         parser.add_argument("-o", "--output", default="", help="Output directory")
         parser.add_argument("--ext", default="dat", help="Custom file extension (default: dat)")
@@ -147,7 +150,7 @@ Examples:
         parser.add_argument("--archive", action="store_true", help="Archive mode for multiple files")
         parser.add_argument("--archive-name", help="Archive filename (default: archive.{ext})")
         parser.add_argument("--chunk-size", type=int, default=3, help="Chunk size in MB (default: 3)")
-        parser.add_argument("--detection-mode", choices=["legacy", "magic", "entropy", "magic+entropy"], default="legacy", help="Compression detection mode (default: legacy)")
+        parser.add_argument("--detection-mode", choices=["legacy", "magic", "entropy", "magic+entropy", "none"], default="legacy", help="Compression detection mode (default: legacy)")
         parser.add_argument("--entropy-threshold", type=float, default=7.5, help="Entropy threshold for compression detection (default: 7.5, range: 6.0-8.0)")
         parser.add_argument("--usb-key", help="USB drive path for USB-codec (e.g., E:\\)")
         parser.add_argument("--usb-list", action="store_true", help="List available USB drives")
@@ -162,6 +165,7 @@ Examples:
         if args.encrypt or args.decrypt:
             self.state.operation = "encrypt" if args.encrypt else "decrypt"
         self.state.password = args.password
+        self.state.keyfile_path = args.keyfile
         self.state.files = [self.state.resolve_file_path(f) for f in args.files] if args.files else []
         self.state.output_dir = args.output
         self.state.custom_ext = args.ext
@@ -204,7 +208,7 @@ Examples:
                                 initialized_drives = []
                                 for drive in drives:
                                     initialized = is_usb_key_initialized(drive)
-                                    status = "✓ Initialized" if initialized else "  Not initialized"
+                                    status = "[OK] Initialized" if initialized else "  Not initialized"
                                     print(f"  {drive} - {status}")
                                     if initialized:
                                         initialized_drives.append(drive)
@@ -231,9 +235,13 @@ Examples:
         if not self.state.files:
             print(f"{Fore.RED}[ERROR] No files specified{Style.RESET_ALL}")
             sys.exit(1)
-        if not self.state.password:
-            print(f"{Fore.RED}[ERROR] No password specified{Style.RESET_ALL}")
+        if not self.state.password and not self.state.keyfile_path:
+            if self.state.operation == "encrypt":
+                print(f"{Fore.RED}[ERROR] Password or Keyfile required (use -p or -k){Style.RESET_ALL}")
+                sys.exit(1)
+            print(f"{Fore.RED}[ERROR] Password or Keyfile required (use -p or -k){Style.RESET_ALL}")
             sys.exit(1)
+            
         if not self.state.operation:
             print(f"{Fore.RED}[ERROR] No operation specified (use -e or -d){Style.RESET_ALL}")
             sys.exit(1)
@@ -262,7 +270,7 @@ Examples:
     def progress_callback(self, progress):
         bar_length = 40
         filled = int(bar_length * progress / 100)
-        bar = "█" * filled + "░" * (bar_length - filled)
+        bar = "#" * filled + " " * (bar_length - filled)
         print(f"\r[{bar}] {progress:.1f}%", end="", flush=True)
 
     def process_files(self):
@@ -279,7 +287,7 @@ Examples:
                 def progress_callback(progress):
                     bar_length = 40
                     filled = int(bar_length * progress / 100)
-                    bar = "█" * filled + "░" * (bar_length - filled)
+                    bar = "#" * filled + " " * (bar_length - filled)
                     print(f"\r[{bar}] {progress:.1f}%", end="", flush=True)
                 worker = CryptoWorker(
                     operation=self.state.operation,
@@ -302,6 +310,7 @@ Examples:
                     aead_algorithm=self.state.aead_algorithm,
                     pbkdf2_hash=self.state.pbkdf2_hash,
                     usb_key_path=self.state.usb_key_path,
+                    keyfile_path=self.state.keyfile_path,
                     compression_detection_mode=self.state.compression_detection_mode,
                     entropy_threshold=self.state.entropy_threshold,
                     progress_callback=progress_callback)
@@ -310,7 +319,7 @@ Examples:
                     worker.encrypt_file()
                 else:
                     worker.decrypt_file()
-                print(f"\n{Fore.GREEN}[OK] Archive processed successfully!{Style.RESET_ALL}")
+                print(f"\n{Fore.GREEN}[OK] Archive processed successfully.{Style.RESET_ALL}")
             except Exception as e:
                 print(f"\n{Fore.RED}[ERROR] {str(e)}{Style.RESET_ALL}")
                 sys.exit(1)
@@ -343,6 +352,7 @@ Examples:
                         aead_algorithm=self.state.aead_algorithm,
                         pbkdf2_hash=self.state.pbkdf2_hash,
                         usb_key_path=self.state.usb_key_path,
+                        keyfile_path=self.state.keyfile_path,
                         compression_detection_mode=self.state.compression_detection_mode,
                         entropy_threshold=self.state.entropy_threshold,
                         progress_callback=self.progress_callback)
@@ -353,13 +363,13 @@ Examples:
                     print(f"\n{Fore.GREEN}[OK] Completed: {os.path.basename(file_path)}{Style.RESET_ALL}")
                 except Exception as e:
                     print(f"\n{Fore.RED}[ERROR] {str(e)}{Style.RESET_ALL}")
-                    sys.exit(1)
-            print(f"\n{Fore.GREEN}[OK] All files processed successfully!{Style.RESET_ALL}")
+                    ## sys.exit(3)
+            print(f"\n{Fore.GREEN}[OK] All files processed successfully.{Style.RESET_ALL}")
 
     def handle_usb_operations(self, args):
         if args.usb_list:
             if not USB_CODEC_AVAILABLE:
-                print(f"{Fore.RED}[ERROR] USB-codec not available. Install required dependencies.{Style.RESET_ALL}")
+                print(f"{Fore.RED}[ERROR] USB-codec not available; install required dependencies.{Style.RESET_ALL}")
                 sys.exit(1)
             print(f"{Fore.CYAN}Available USB drives:{Style.RESET_ALL}")
             try:
@@ -372,16 +382,15 @@ Examples:
                     if initialized:
                         try:
                             info = get_usb_key_info(drive)
-                            print(f"  {drive} - {Fore.GREEN}✓ Initialized{Style.RESET_ALL} (UUID: {info['uuid'][:12]}...)")
+                            print(f"  {drive} - {Fore.GREEN}Initialized{Style.RESET_ALL} (UUID: {info['uuid'][:12]}...)")
                         except:
-                            print(f"  {drive} - {Fore.GREEN}✓ Initialized{Style.RESET_ALL}")
+                            print(f"  {drive} - {Fore.GREEN}Initialized{Style.RESET_ALL}")
                     else:
                         print(f"  {drive} - {Fore.YELLOW}Not initialized{Style.RESET_ALL}")
             except Exception as e:
                 print(f"{Fore.RED}[ERROR] Failed to list USB drives: {e}{Style.RESET_ALL}")
                 sys.exit(1)
             return True
-        
         if args.usb_setup:
             if not USB_CODEC_AVAILABLE:
                 print(f"{Fore.RED}[ERROR] USB-codec not available. Install required dependencies.{Style.RESET_ALL}")
@@ -397,7 +406,7 @@ Examples:
             try:
                 print(f"{Fore.CYAN}Setting up USB-codec on {usb_path}...{Style.RESET_ALL}")
                 usb_key, uuid = setup_usb_key(usb_path)
-                print(f"{Fore.GREEN}[OK] USB-codec initialized successfully!{Style.RESET_ALL}")
+                print(f"{Fore.GREEN}[OK] USB-codec initialized successfully.{Style.RESET_ALL}")
                 print(f"{Fore.CYAN}UUID: {uuid}{Style.RESET_ALL}")
                 print(f"{Fore.YELLOW}Keep this USB safe; you'll need it to decrypt files encrypted with it.{Style.RESET_ALL}")
             except Exception as e:
@@ -415,9 +424,6 @@ Examples:
             if not args.encrypt and not args.decrypt:
                 print(f"{Fore.RED}[ERROR] Must specify either -e/--encrypt or -d/--decrypt{Style.RESET_ALL}")
                 sys.exit(1)
-            if not args.password:
-                print(f"{Fore.RED}[ERROR] Password required (use -p/--password){Style.RESET_ALL}")
-                sys.exit(1)
             if not args.files:
                 print(f"{Fore.RED}[ERROR] Files required (use -f/--files){Style.RESET_ALL}")
                 sys.exit(1)
@@ -426,9 +432,9 @@ Examples:
             self.process_files()
         except KeyboardInterrupt:
             print(f"\n{Fore.YELLOW}[CANCEL] Operation interrupted by user{Style.RESET_ALL}")
-            sys.exit(130)
-        except Exception as e:
+            sys.exit(3)
             print(f"{Fore.RED}[FATAL] {str(e)}{Style.RESET_ALL}")
+        except Exception as e:
             sys.exit(1)
 
 def main():
