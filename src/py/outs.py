@@ -1,5 +1,5 @@
 ## outs.py
-## last updated: 21/11/2025 <d/m/y>
+## last updated: 10/02/2026 <d/m/y>
 ## p-y-k-x
 import os
 import tempfile
@@ -16,6 +16,7 @@ from PySide6.QtGui import *
 from PySide6.QtCore import Signal as pyqtSignal
 
 from sfx import SoundManager
+from c_base import get_resource_path
 try:
     from zxcvbn import zxcvbn
     ZXCVBN_AVAILABLE = True
@@ -27,60 +28,9 @@ try:
 except ImportError:
     USB_CODEC_AVAILABLE = False
 
-def get_resource_path(relative_path):
-    candidates = []
-    if getattr(sys, "frozen", False):
-        if hasattr(sys, "_MEIPASS"):
-            candidates.append(sys._MEIPASS)
-        nuitka_temp = os.environ.get("NUITKA_ONEFILE_TEMP")
-        if nuitka_temp:
-            candidates.append(nuitka_temp)
-        try:
-            candidates.append(os.path.dirname(sys.executable))
-        except Exception:
-            pass
-        try:
-            candidates.append(os.path.dirname(os.path.abspath(sys.argv[0])))
-        except Exception:
-            pass
-        try:
-            candidates.append(tempfile.gettempdir())
-        except Exception:
-            pass
-        candidates.extend([os.environ.get("TEMP"), os.environ.get("TMP")])
-    candidates.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-    candidates.append(os.getcwd())
-    tried = []
-    first_seg = relative_path.split(os.sep)[0]
-    for base in candidates:
-        if not base:
-            continue
-        candidate_path = os.path.join(base, relative_path)
-        tried.append(candidate_path)
-        if os.path.exists(candidate_path):
-            return candidate_path
-        if os.sep in relative_path:
-            alt = os.path.join(base, first_seg, *relative_path.split(os.sep)[1:])
-            tried.append(alt)
-            if os.path.exists(alt):
-                return alt
-    try:
-        tempdir = tempfile.gettempdir()
-        pattern = os.path.join(tempdir, "**", first_seg)
-        for match in glob.glob(pattern, recursive=True):
-            if os.path.isdir(match):
-                candidate = os.path.join(match, *relative_path.split(os.sep)[1:]) if os.sep in relative_path else os.path.join(match, relative_path)
-                tried.append(candidate)
-                if os.path.exists(candidate):
-                    return candidate
-    except Exception:
-        pass
-    raise FileNotFoundError("Resource not found: {!r}. Tried:\n{}".format(relative_path, "\n".join(tried)))
-
 def enable_win_dark_mode(widget):
     if sys.platform == "win32":
         try:
-            import ctypes
             from ctypes import wintypes
             hwnd = int(widget.winId())
             DWMWA_USE_IMMERSIVE_DARK_MODE = 20
@@ -116,11 +66,41 @@ class CustomDialog(QDialog):
         layout.addWidget(self.ok_button)
         self.setLayout(layout)
 
+class KeyfileGeneratorDialog(QDialog):
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setWindowTitle("Generate Keyfile")
+        self.setFixedSize(400, 200)
+        self.setWindowFlags(self.windowFlags() & ~Qt.WindowContextHelpButtonHint)
+        enable_win_dark_mode(self)
+        layout = QVBoxLayout(self)
+        info = QLabel("Generate a random 512 byte keyfile.\nThis file can be used in place of, or in addition to, a password.")
+        info.setWordWrap(True)
+        layout.addWidget(info)
+        self.generate_btn = QPushButton("Generate keyfile")
+        self.generate_btn.clicked.connect(self.generate)
+        layout.addWidget(self.generate_btn)
+        self.cancel_btn = QPushButton("Cancel")
+        self.cancel_btn.clicked.connect(self.reject)
+        layout.addWidget(self.cancel_btn)
+        
+    def generate(self):
+        file_path, _ = QFileDialog.getSaveFileName(self, "Save keyfile", "keyfile.pykx", "PyKryptor ;eyfiles (*.pykx);;All files (*)")
+        if file_path:
+            try:
+                data = os.urandom(512)
+                with open(file_path, "wb") as f:
+                    f.write(data)
+                CustomDialog("Success", f"Keyfile generated successfully at:\n{file_path}", self).exec()
+                self.accept()
+            except Exception as e:
+                CustomDialog("Error", f"Failed to generate keyfile.\n\ne:{e}", self).exec()
+
 class ArchiveCreationDialog(QDialog):
     def __init__(self, parent=None, current_settings=None):
         super().__init__(parent)
         self.setWindowTitle("Create archive")
-        self.setFixedSize(600, 600)
+        self.setFixedSize(600, 650)
         self.setWindowFlags(self.windowFlags() & ~Qt.WindowContextHelpButtonHint)
         self.setAcceptDrops(True)
         enable_win_dark_mode(self)
@@ -243,15 +223,16 @@ class ArchiveCreationDialog(QDialog):
         self.compression_combo.setCurrentText(compression_mapping.get(current_compression, "None"))
         compression_layout.addRow("Compression level:", self.compression_combo)
         self.detection_mode_combo = QComboBox()
-        self.detection_mode_combo.addItems(["Legacy (extension)", "Magic bytes", "Entropy heuristic", "Magic bytes + Entropy"])
+        self.detection_mode_combo.addItems(["Legacy (extension)", "Magic bytes", "Entropy heuristic", "Magic bytes + Entropy", "None (Smart Skipper disabled)"])
         detection_map = {
             "legacy": "Legacy (extension)",
             "magic": "Magic bytes",
             "entropy": "Entropy heuristic",
-            "magic+entropy": "Magic bytes + Entropy"}
+            "magic+entropy": "Magic bytes + Entropy",
+            "none": "None (Smart Skipper disabled)"}
         current_detection = self.current_settings.get("compression_detection", "legacy")
         self.detection_mode_combo.setCurrentText(detection_map.get(current_detection, "Legacy (extension)"))
-        self.detection_mode_combo.setToolTip("Detection mode\n\nWe use the detection mode to check for already compressed\nfiles with PyKryptor. Each one written in C has it's own\nlittle quirks...\n\nLegacy - only checks for certain file extensions and skips\nthose when compressing.\n\nMagic bytes - we use said signatures; as used;\nto check if the file has compressed data or markings too.\n\nEntropy heuristic - samples around 8KB of a non-determined file to see if\nthe compression ratio is worth, or not.\n\nMagic bytes + Entropy - combines 2nd and 3rd methods into one, most accurate.")
+        self.detection_mode_combo.setToolTip("Detection mode\n\nWe use the detection mode to check for already compressed\nfiles with PyKryptor. Each one written in C has it's own\nlittle quirks...\n\nLegacy - only checks for certain file extensions and skips\nthose when compressing.\n\nMagic bytes - we use said signatures; as used;\nto check if the file has compressed data or markings too.\n\nEntropy heuristic - samples around 8KB of a non-determined file to see if\nthe compression ratio is worth, or not.\n\nMagic bytes + Entropy - combines 2nd and 3rd methods into one, most accurate.\n\nNone - Disables detection (Smart Skipper); always attempts compression.")
         compression_layout.addRow("Detection mode:", self.detection_mode_combo)
         self.entropy_threshold_spinbox = QDoubleSpinBox()
         self.entropy_threshold_spinbox.setRange(6.0, 8.0)
@@ -318,11 +299,7 @@ class ArchiveCreationDialog(QDialog):
         self.peek_button.toggled.connect(self.toggle_password_visibility)
         password_field_layout.addWidget(self.password_field)
         password_field_layout.addWidget(self.peek_button)
-        self.password_confirm_field = QLineEdit()
-        self.password_confirm_field.setEchoMode(QLineEdit.Password)
-        self.password_confirm_field.setPlaceholderText("Confirm password...")
         password_layout.addLayout(password_field_layout)
-        password_layout.addWidget(self.password_confirm_field)
         if ZXCVBN_AVAILABLE:
             self.strength_label = QLabel("Password strength: X")
             self.strength_label.setStyleSheet("color: #888888; font-size: 9pt; margin-top: 2px;")
@@ -331,6 +308,27 @@ class ArchiveCreationDialog(QDialog):
         else:
             self.strength_label = None
         password_group.setLayout(password_layout)
+        self.password_group = password_group
+        keyfile_group = QGroupBox("Keyfile selection")
+        keyfile_group_layout = QVBoxLayout()
+        keyfile_input_layout = QHBoxLayout()
+        self.main_keyfile_path_field = QLineEdit()
+        self.main_keyfile_path_field.setPlaceholderText("Select or generate a keyfile...")
+        self.main_keyfile_path_field.setReadOnly(True)
+        self.main_browse_keyfile_button = QPushButton("Browse")
+        self.main_browse_keyfile_button.clicked.connect(self.browse_main_keyfile)
+        self.main_generate_keyfile_button = QPushButton("Generate")
+        self.main_generate_keyfile_button.clicked.connect(self.generate_main_keyfile)
+        keyfile_input_layout.addWidget(self.main_keyfile_path_field)
+        keyfile_input_layout.addWidget(self.main_browse_keyfile_button)
+        keyfile_input_layout.addWidget(self.main_generate_keyfile_button)
+        keyfile_group_layout.addLayout(keyfile_input_layout)
+        keyfile_group.setLayout(keyfile_group_layout)
+        self.keyfile_group = keyfile_group
+        self.keyfile_group.setVisible(False)
+        self.auth_mode_hint = QLabel("Press CTRL + SHIFT + K to switch to keyfile mode")
+        self.auth_mode_hint.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.auth_mode_hint.setStyleSheet("color: #888888; font-size: 8pt; margin-top: 5px;")
         button_layout = QHBoxLayout()
         self.create_button = QPushButton("Create archive")
         icon_path = get_resource_path(os.path.join("img", "create_archive_img.png"))
@@ -346,8 +344,39 @@ class ArchiveCreationDialog(QDialog):
         main_layout.addWidget(name_group)
         main_layout.addWidget(files_group)
         main_layout.addWidget(settings_tabs)
-        main_layout.addWidget(password_group)
+        main_layout.addWidget(self.password_group)
+        main_layout.addWidget(self.keyfile_group)
+        main_layout.addWidget(self.auth_mode_hint)
         main_layout.addLayout(button_layout)
+        self.keyfile_shortcut = QShortcut(QKeySequence("Ctrl+Shift+K"), self)
+        self.keyfile_shortcut.activated.connect(self.toggle_authentication_mode)
+    
+    def toggle_authentication_mode(self):
+        if self.password_group.isVisible():
+            self.password_group.setVisible(False)
+            self.keyfile_group.setVisible(True)
+            self.password_field.clear()
+            self.auth_mode_hint.setText("Press CTRL + SHIFT + K to switch to password mode")
+        else:
+            self.keyfile_group.setVisible(False)
+            self.password_group.setVisible(True)
+            self.main_keyfile_path_field.clear()
+            self.auth_mode_hint.setText("Press CTRL + SHIFT + K to switch to keyfile mode")
+
+    def browse_main_keyfile(self):
+        file, _ = QFileDialog.getOpenFileName(self, "Select keyfile", "", "PyKryptor keyfiles (*.pykx);;All files (*)")
+        if file:
+            self.main_keyfile_path_field.setText(file)
+
+    def generate_main_keyfile(self):
+        dialog = KeyfileGeneratorDialog(self)
+        dialog.exec()
+        
+    def browse_usb_key(self):
+        dialog = USBSelectionDialog(self)
+        if dialog.exec() == QDialog.Accepted and dialog.usb_path:
+            self.usb_path_field.setText(dialog.usb_path)
+            self.usb_key_checkbox.setChecked(True)
     
     def dragEnterEvent(self, event):
         if event.mimeData().hasUrls():
@@ -411,12 +440,10 @@ class ArchiveCreationDialog(QDialog):
     def toggle_password_visibility(self, checked):
         if checked:
             self.password_field.setEchoMode(QLineEdit.Normal)
-            self.password_confirm_field.setEchoMode(QLineEdit.Normal)
             icon_path = get_resource_path(os.path.join("img", "hide_pass_img.png"))
             self.peek_button.setIcon(QIcon(icon_path))
         else:
             self.password_field.setEchoMode(QLineEdit.Password)
-            self.password_confirm_field.setEchoMode(QLineEdit.Password)
             icon_path = get_resource_path(os.path.join("img", "show_pass_img.png"))
             self.peek_button.setIcon(QIcon(icon_path))
     
@@ -424,7 +451,7 @@ class ArchiveCreationDialog(QDialog):
         if not ZXCVBN_AVAILABLE or not self.strength_label:
             return
         if not password:
-            self.strength_label.setText("Password strength: X")
+            self.strength_label.setText("Password strength: N/A")
             self.strength_label.setStyleSheet("color: #888888; font-size: 9pt;")
             return
         if len(password) > 72:
@@ -451,17 +478,21 @@ class ArchiveCreationDialog(QDialog):
     
     def create_archive(self):
         if self.files_list.count() == 0:
-            dialog = CustomDialog("Warning", "Please add at least one file to the archive.", self)
+            dialog = CustomDialog("Warning", "Please add at LEAST one file to the archive.", self)
             dialog.exec()
             return
-        password = self.password_field.text()
-        password_confirm = self.password_confirm_field.text()
-        if not password:
-            dialog = CustomDialog("Warning", "No password was provided?", self)
-            dialog.exec()
-            return
-        if password != password_confirm:
-            dialog = CustomDialog("Warning", "Passwords do not match. Make REAL good sure that they match.", self)
+        keyfile_path = None
+        password = ""
+        if self.keyfile_group.isVisible():
+            keyfile_path = self.main_keyfile_path_field.text().strip()
+            if keyfile_path and not os.path.exists(keyfile_path):
+                keyfile_path = None # Invalid
+        else:
+            password = self.password_field.text()
+        use_usb_key = self.usb_key_checkbox.isChecked()
+        usb_key_path = self.usb_path_field.text().strip() if use_usb_key else None
+        if not password and not keyfile_path and not usb_key_path:
+            dialog = CustomDialog("Warning", "You must provide a Password, Keyfile, or USB-codec Key.", self)
             dialog.exec()
             return
         archive_name = self.archive_name_field.text().strip()
@@ -474,12 +505,10 @@ class ArchiveCreationDialog(QDialog):
             dialog = CustomDialog("Warning", "Uh output dir pls?", self)
             dialog.exec()
             return
-        use_usb_key = self.usb_key_checkbox.isChecked()
-        usb_key_path = None
+
         if use_usb_key:
-            usb_key_path = self.usb_path_field.text().strip()
             if not usb_key_path:
-                dialog = CustomDialog("Warning", "USB-codec is enabled but no USB PATH selected. Please browse for a USB.", self)
+                dialog = CustomDialog("Warning", "USB-codec is enabled but no USB-codec PATH selected.", self)
                 dialog.exec()
                 return
             try:
@@ -505,7 +534,8 @@ class ArchiveCreationDialog(QDialog):
             "Legacy (extension)": "legacy",
             "Magic bytes": "magic",
             "Entropy heuristic": "entropy",
-            "Magic bytes + Entropy": "magic+entropy"}
+            "Magic bytes + Entropy": "magic+entropy",
+            "None (Smart Skipper disabled)": "none"}
         aead_map_rev = {"AES-256-GCM": "aes-gcm", "ChaCha20-Poly1305": "chacha20-poly1305"}
         self.archive_data = {
             "files": files,
@@ -526,6 +556,7 @@ class ArchiveCreationDialog(QDialog):
             "add_recovery_data": self.recovery_checkbox.isChecked(),
             "use_usb_key": use_usb_key,
             "usb_key_path": usb_key_path,
+            "keyfile_path": keyfile_path,
             "chunk_size_mb": self.chunk_size_spinbox.value()}
         self.accept()
 
@@ -567,7 +598,6 @@ class ErrorExportDialog(QDialog):
                 f.write("\n".join(self.errors))
             dialog = CustomDialog("Export successful", f"Errors exported to:\n{file_path}", self)
             dialog.exec()
-
 
 class ProgressDialog(QDialog):
     canceled = pyqtSignal()
@@ -624,7 +654,7 @@ class CustomArgon2Dialog(QDialog):
             "Sensitive (balanced)": 65536,
             "Paranoid (reaaaaally slow)": 262144,
             "ULTRAKILL (what are you hiding?)": 524288,
-            "Ok bro... (why?)": 1048576} ## why did i add this?       
+            "Ok bro... (why?)": 1048576}      
         for name, value in presets.items():
             button = QPushButton(f"{name} - {value:,} KB ({value // 1024} MB)")
             button.clicked.connect(lambda checked, v=value: self.set_preset(v))
@@ -694,7 +724,7 @@ class DebugConsole(QDialog):
         elif cmd == "?test_sfx":
             self.test_sound_effect(args)
         elif cmd == "?rand_pass":
-            self.generate_password(self)
+            self.generate_password()
         elif cmd == "?help":
             self.append_text("\n\nAvailable commands:\n")
             self.append_text("  ?help             - Shows this help message.\n")
@@ -735,14 +765,14 @@ class DebugConsole(QDialog):
             chars += "!@#$%^&*()-_=+[]{}|;:,.<>?"
         password = "".join(secrets.choice(chars) for _ in range(length))
         self.append_text("\n\n--- RP ---\n")
-        self.append_text(f"Random {length}-char crypto password:\n")
+        self.append_text(f"Random {length} char crypto password:\n")
         self.append_text(f"`{password}`\n")
         self.append_text(f"(Copypaste ADF – {len(password)} chars)\n")
         self.append_text("--------------------------\n")
 
     def test_sound_effect(self, args):
         if not args:
-            self.append_text("[ERROR] Missing argument. Usage: ?test_sfx [sound_name]\n")
+            self.append_text("[ERROR] Missing argument; usage: ?test_sfx [sound_name]\n")
             return
         sound_name = args[0]
         self.append_text(f"Attempting to play sound: {sound_name}\n")
@@ -814,7 +844,7 @@ class USBSetupDialog(QDialog):
                 info = get_usb_key_info(drive) if initialized else None
                 item_text = f"{drive}"
                 if initialized and info:
-                    item_text += f" (Initialized - UUID: {info['uuid'][:8]}...)"
+                    item_text += f" (Initialized - UUID: {info["uuid"][:8]}...)"
                 item = QListWidgetItem(item_text)
                 item.setData(Qt.ItemDataRole.UserRole, drive)
                 if initialized:
@@ -846,11 +876,15 @@ class USBSetupDialog(QDialog):
             return
         try:
             usb_key, uuid = setup_usb_key(usb_path)
+            if self.parent() and hasattr(self.parent(), "sound_manager") and not self.parent().mute_sfx:
+                self.parent().sound_manager.play_sound("success.wav")
             dialog = CustomDialog("Success", f"USB-codec initialized successfully.\n\nUUID: {uuid}\n\nKeep this USB safe; you'll need it to decrypt files encrypted with it.", self)
             dialog.exec()
             self.usb_path = usb_path
             self.accept()
         except Exception as e:
+            if self.parent() and hasattr(self.parent(), "sound_manager") and not self.parent().mute_sfx:
+                self.parent().sound_manager.play_sound("error.wav")
             dialog = CustomDialog("Error", f"Failed to setup USB-codec:\n{str(e)}", self)
             dialog.exec()
 
@@ -938,10 +972,13 @@ class USBSelectionDialog(QDialog):
             return
         usb_path = selected_items[0].data(Qt.ItemDataRole.UserRole)
         try:
-            usb_key, uuid = get_usb_key(usb_path)
+            from usb_codec import get_usb_key
+            get_usb_key(usb_path) 
             self.usb_path = usb_path
             self.accept()
         except Exception as e:
+            if self.parent() and hasattr(self.parent(), "sound_manager") and not self.parent().mute_sfx:
+                self.parent().sound_manager.play_sound("error.wav")
             dialog = CustomDialog("Error", f"{str(e)}\n\nPlug in the original USB containing the USB-codec format used to encrypt this archive.", self)
             dialog.exec()
 
