@@ -1,5 +1,5 @@
 ## sfx.py
-## last updated: 21/11/2025 <d/m/y>
+## last updated: 10/02/2026 <d/m/y>
 ## p-y-k-x
 import sys
 import os
@@ -13,62 +13,14 @@ sys.stderr = open(os.devnull, "w")
 import pygame
 sys.stderr = stderr
 from colorama import *
-
-def get_resource_path(relative_path):
-    candidates = []
-    if getattr(sys, "frozen", False):
-        if hasattr(sys, "_MEIPASS"):
-            candidates.append(sys._MEIPASS)
-        nuitka_temp = os.environ.get("NUITKA_ONEFILE_TEMP")
-        if nuitka_temp:
-            candidates.append(nuitka_temp)
-        try:
-            candidates.append(os.path.dirname(sys.executable))
-        except Exception:
-            pass
-        try:
-            candidates.append(os.path.dirname(os.path.abspath(sys.argv[0])))
-        except Exception:
-            pass
-        try:
-            candidates.append(tempfile.gettempdir())
-        except Exception:
-            pass
-        candidates.extend([os.environ.get("TEMP"), os.environ.get("TMP")])
-    candidates.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-    candidates.append(os.getcwd())
-    tried = []
-    first_seg = relative_path.split(os.sep)[0]
-    for base in candidates:
-        if not base:
-            continue
-        candidate_path = os.path.join(base, relative_path)
-        tried.append(candidate_path)
-        if os.path.exists(candidate_path):
-            return candidate_path
-        if os.sep in relative_path:
-            alt = os.path.join(base, first_seg, *relative_path.split(os.sep)[1:])
-            tried.append(alt)
-            if os.path.exists(alt):
-                return alt
-    try:
-        tempdir = tempfile.gettempdir()
-        pattern = os.path.join(tempdir, "**", first_seg)
-        for match in glob.glob(pattern, recursive=True):
-            if os.path.isdir(match):
-                candidate = os.path.join(match, *relative_path.split(os.sep)[1:]) if os.sep in relative_path else os.path.join(match, relative_path)
-                tried.append(candidate)
-                if os.path.exists(candidate):
-                    return candidate
-    except Exception:
-        pass
-    raise FileNotFoundError("Resource not found: {!r}. Tried:\n{}".format(relative_path, "\n".join(tried)))
+from c_base import get_resource_path
 
 class SoundManager:
     def __init__(self):
         self.sounds = {}
         self.sound_dir = None
-        self.mixer_initialized = False        
+        self.mixer_initialized = False
+        self.volume = 1.0 ## 0.0
         try:
             pygame.mixer.pre_init(frequency=22050, size=-16, channels=2, buffer=512)
             pygame.mixer.init()
@@ -86,10 +38,11 @@ class SoundManager:
             return False         
         sound_path = os.path.join(self.sound_dir, sound_name)        
         if not os.path.exists(sound_path):
-            print(Fore.YELLOW + f"[DEV PRINT] Sound file not found at: {sound_path}" + Style.RESET_ALL) # Added debug print
+            print(Fore.YELLOW + f"[DEV PRINT] Sound file not found at: {sound_path}" + Style.RESET_ALL)
             return False          
         try:
             sound = pygame.mixer.Sound(sound_path)
+            sound.set_volume(self.volume)
             self.sounds[sound_name] = sound
             return True
         except pygame.error as e:
@@ -108,14 +61,23 @@ class SoundManager:
         except pygame.error as e:
             print(Fore.RED + f"[DEV PRINT] Failed to play sound '{sound_name}'.\n\ne: {e}")
 
+    def set_volume(self, volume):
+        self.volume = max(0.0, min(1.0, volume))
+        if self.mixer_initialized:
+            for sound in self.sounds.values():
+                sound.set_volume(self.volume)
+
     def list_available_sounds(self):
         if not self.sound_dir or not os.path.exists(self.sound_dir):
             print(Fore.RED + "[DEV PRINT] Sound directory not found." + Style.RESET_ALL)
             return []
         sound_files = []
-        for file in os.listdir(self.sound_dir):
-            if file.lower().endswith((".wav", ".ogg", ".mp3")):
-                sound_files.append(file)
+        try:
+            for file in os.listdir(self.sound_dir):
+                if file.lower().endswith((".wav", ".ogg", ".mp3")):
+                    sound_files.append(file)
+        except OSError:
+            pass
         return sound_files
 
     def unload(self):
