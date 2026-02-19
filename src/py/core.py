@@ -1,14 +1,17 @@
 ## core.py
-## last updated: 10/02/2026 <d/m/y>
+## last updated: 18/02/2026 <d/m/y>
 ## p-y-k-x
 import os
 import io
+import gc
+import stat as _stat
 import struct
 import ctypes
 import hashlib
 import reedsolo
 import mmap
 import base64
+import tempfile
 import threading
 from PySide6.QtCore import QThread
 from PySide6.QtCore import Signal as pyqtSignal
@@ -31,6 +34,16 @@ except ImportError:
 from c_base import clear_buffer
 from cmp import compress_chunk, decompress_chunk, should_skip_compression, COMPRESSION_NONE, COMPRESSION_MODES
 from usb_codec import KEYFILE_SIZE
+
+_PAGE_SIZE = mmap.PAGESIZE
+_BATCH_PROGRESS_INTERVAL = 50 ## "think like a C++ dev" no i hate you
+_GC_CHUNK_INTERVAL = 64
+
+def _madvise_sequential(mm):
+    try:
+        mm.madvise(mmap.MADV_SEQUENTIAL)  ## type: ignore[attr-defined]
+    except AttributeError:
+        pass
 
 CHUNK_SIZE = 3 * 1024 * 1024
 FORMAT_VERSION = 10
@@ -61,30 +74,33 @@ def compress_chunk_threaded(chunk_data, compression_level):
 def create_archive(file_paths, progress_callback=None):
     if progress_callback:
         progress_callback(0.0)
-    archive_header = bytearray()
-    archive_header.extend(struct.pack("!I", len(file_paths)))
-    total_size = 0
+    common_base = os.path.commonpath(file_paths) if len(file_paths) > 1 else os.path.dirname(file_paths[0])
+    n_paths = len(file_paths)
     file_info = []
-    total_files = len([f for f in file_paths if os.path.isfile(f)])
-    processed_files = 0
-    for file_path in file_paths:
-        if os.path.isfile(file_path):
-            size = os.path.getsize(file_path)
-            rel_path = os.path.relpath(file_path, os.path.commonpath(file_paths) if len(file_paths) > 1 else os.path.dirname(file_path))
-            file_info.append((file_path, rel_path, size))
-            total_size += size
-            processed_files += 1
-            if progress_callback and total_files > 0:
-                progress_callback((processed_files / total_files) * 25.0)
-    if progress_callback:
-        progress_callback(25.0)
-    for i, (file_path, rel_path, file_size) in enumerate(file_info):
+    total_size = 0
+    header_entries = bytearray()
+    for idx, file_path in enumerate(file_paths):
+        try:
+            st = os.stat(file_path)
+        except OSError:
+            continue
+        if not _stat.S_ISREG(st.st_mode):
+            continue
+        size = st.st_size
+        rel_path = os.path.relpath(file_path, common_base)
         rel_path_bytes = rel_path.encode("utf-8")
-        archive_header.extend(struct.pack("!I", len(rel_path_bytes)))
-        archive_header.extend(rel_path_bytes)
-        archive_header.extend(struct.pack("!Q", file_size))
-        if progress_callback:
-            progress_callback(25.0 + ((i + 1) / len(file_info)) * 25.0)
+        file_info.append((file_path, rel_path, size))
+        total_size += size
+        header_entries.extend(struct.pack("!I", len(rel_path_bytes)))
+        header_entries.extend(rel_path_bytes)
+        header_entries.extend(struct.pack("!Q", size))
+        if progress_callback and (idx % _BATCH_PROGRESS_INTERVAL == 0):
+            progress_callback(min(49.9, (idx / max(1, n_paths)) * 50.0))
+    if not file_info:
+        raise ValueError("No valid files found to archive.")
+    archive_header = bytearray()
+    archive_header.extend(struct.pack("!I", len(file_info)))
+    archive_header.extend(header_entries)
     if progress_callback:
         progress_callback(50.0)
     return bytes(archive_header), file_info, total_size
@@ -133,6 +149,60 @@ def extract_archive(archive_data, output_dir, progress_callback=None):
         os.makedirs(os.path.dirname(output_path), exist_ok=True)
         with open(output_path, "wb") as f:
             f.write(file_data)
+    if progress_callback:
+        progress_callback(100.0)
+
+def extract_archive_streaming(source_path, output_dir, progress_callback=None):
+    safe_output_dir = os.path.realpath(output_dir)
+    if not os.path.exists(safe_output_dir):
+        os.makedirs(safe_output_dir)
+
+    total_size = os.path.getsize(source_path)
+
+    with open(source_path, "rb") as src:
+        raw = src.read(4)
+        if len(raw) < 4:
+            raise ValueError("Invalid archive: too short")
+        num_files = struct.unpack("!I", raw)[0]
+        if num_files > MAX_ARCHIVE_FILES:
+            raise ValueError(f"Invalid archive: file count {num_files} exceeds limit {MAX_ARCHIVE_FILES} (how do you even reach this)?")
+        files_info = []
+        for i in range(num_files):
+            raw = src.read(4)
+            if len(raw) < 4:
+                raise ValueError(f"Invalid archive: unexpected end reading path length for file {i}")
+            path_len = struct.unpack("!I", raw)[0]
+            if path_len == 0 or path_len > (1024 * 4):
+                raise ValueError(f"Invalid archive: invalid path length {path_len} for file {i}")
+            raw = src.read(path_len)
+            if len(raw) != path_len:
+                raise ValueError(f"Invalid archive: unexpected end reading path for file {i}")
+            rel_path = raw.decode("utf-8")
+            raw = src.read(8)
+            if len(raw) < 8:
+                raise ValueError(f"Invalid archive: unexpected end reading file size for file {i}")
+            file_size = struct.unpack("!Q", raw)[0]
+            files_info.append((rel_path, file_size))
+        bytes_read = src.tell()
+        for rel_path, file_size in files_info:
+            if progress_callback:
+                progress_callback(min(99.9, (bytes_read / max(1, total_size)) * 100))
+            out_joined = os.path.join(safe_output_dir, rel_path)
+            out_path = os.path.realpath(out_joined)
+            if not (out_path == safe_output_dir or out_path.startswith(safe_output_dir + os.sep)):
+                raise ValueError(f"Invalid archive: path traversal attempt in {rel_path}")
+            os.makedirs(os.path.dirname(out_path), exist_ok=True)
+            remaining = file_size
+            with open(out_path, "wb") as dst:
+                while remaining > 0:
+                    to_read = min(CHUNK_SIZE, remaining)
+                    buf = src.read(to_read)
+                    if len(buf) != to_read:
+                        raise ValueError(f"Invalid archive: unexpected end reading data for {rel_path}")
+                    dst.write(buf)
+                    remaining -= len(buf)
+                    bytes_read += len(buf)
+                    del buf
     if progress_callback:
         progress_callback(100.0)
 
@@ -319,35 +389,61 @@ class CryptoWorker:
             header_bytes = header_buffer.getvalue()
             outfile.write(header_bytes)
             processed_size = 0
-            if total_size > self.chunk_size * 4 and effective_compression_level != "none":
+            chunk_count = 0
+            max_in_flight = self.max_workers * 2
+            use_mmap = total_size > 0
+            if use_mmap:
                 try:
-                    with mmap.mmap(infile.fileno(), 0, access=mmap.ACCESS_READ) as mmapped_file:
-                        chunk_futures = []
-                        with ThreadPoolExecutor(max_workers=self.max_workers) as executor:
+                    with mmap.mmap(infile.fileno(), 0, access=mmap.ACCESS_READ) as mm:
+                        _madvise_sequential(mm)
+                        mv = memoryview(mm)
+                        if effective_compression_level != "none":
+                            with ThreadPoolExecutor(max_workers=self.max_workers) as executor:
+                                offset = 0
+                                pending_futures = []
+                                while offset < total_size or pending_futures:
+                                    while len(pending_futures) < max_in_flight and offset < total_size:
+                                        if self.is_canceled:
+                                            raise Exception("Operation canceled by user.")
+                                        chunk_len = min(self.chunk_size, total_size - offset)
+                                        chunk_data = bytes(mv[offset:offset + chunk_len])
+                                        future = executor.submit(compress_chunk_threaded, chunk_data, effective_compression_level)
+                                        pending_futures.append((future, offset, chunk_len))
+                                        offset += chunk_len
+                                    if pending_futures:
+                                        future, chunk_offset, chunk_len = pending_futures.pop(0)
+                                        compressed_chunk, compression_id = future.result()
+                                        if first_chunk:
+                                            final_compression_id = compression_id
+                                            first_chunk = False
+                                        if final_compression_id == COMPRESSION_NONE:
+                                            compressed_chunk = bytes(mv[chunk_offset:chunk_offset + chunk_len])
+                                        elif compression_id == COMPRESSION_NONE:
+                                            mode = COMPRESSION_MODES[effective_compression_level]
+                                            compressed_chunk = mode["func"](bytes(mv[chunk_offset:chunk_offset + chunk_len]))
+                                        chunk_nonce = os.urandom(NONCE_SIZE)
+                                        encrypted_chunk = cipher.encrypt(chunk_nonce, compressed_chunk, associated_data=header_bytes)
+                                        outfile.write(chunk_nonce)
+                                        outfile.write(struct.pack("!I", len(encrypted_chunk)))
+                                        outfile.write(encrypted_chunk)
+                                        if rs_codec:
+                                            parity = rs_codec.encode(encrypted_chunk)[-ECC_BYTES:]
+                                            outfile.write(parity)
+                                        processed_size += chunk_len
+                                        chunk_count += 1
+                                        del compressed_chunk, encrypted_chunk
+                                        if chunk_count % _GC_CHUNK_INTERVAL == 0:
+                                            gc.collect()
+                                        if self.progress_callback:
+                                            self.progress_callback(processed_size / total_size * 100)
+                        else:
                             offset = 0
                             while offset < total_size:
-                                if self.is_canceled: raise Exception("Operation canceled by user.")
-                                chunk_size = min(self.chunk_size, total_size - offset)
-                                chunk_data = mmapped_file[offset:offset + chunk_size]
-                                future = executor.submit(compress_chunk_threaded, bytes(chunk_data), effective_compression_level)
-                                chunk_futures.append((future, offset, len(chunk_data)))
-                                offset += chunk_size
-                            for future, chunk_offset, chunk_len in chunk_futures:
-                                if self.is_canceled: raise Exception("Operation canceled by user.")
-                                compressed_chunk, compression_id = future.result()
-                                if first_chunk:
-                                    final_compression_id = compression_id
-                                    first_chunk = False
-                                if final_compression_id == COMPRESSION_NONE:
-                                    mmapped_file.seek(chunk_offset)
-                                    compressed_chunk = mmapped_file.read(chunk_len)
-                                elif compression_id == COMPRESSION_NONE:
-                                    mode = COMPRESSION_MODES[effective_compression_level]
-                                    mmapped_file.seek(chunk_offset)
-                                    original_chunk = mmapped_file.read(chunk_len)
-                                    compressed_chunk = mode["func"](original_chunk)
+                                if self.is_canceled:
+                                    raise Exception("Operation canceled by user.")
+                                chunk_len = min(self.chunk_size, total_size - offset)
                                 chunk_nonce = os.urandom(NONCE_SIZE)
-                                encrypted_chunk = cipher.encrypt(chunk_nonce, compressed_chunk, associated_data=header_bytes)
+                                encrypted_chunk = cipher.encrypt(chunk_nonce, bytes(mv[offset:offset + chunk_len]), associated_data=header_bytes)
                                 outfile.write(chunk_nonce)
                                 outfile.write(struct.pack("!I", len(encrypted_chunk)))
                                 outfile.write(encrypted_chunk)
@@ -355,37 +451,25 @@ class CryptoWorker:
                                     parity = rs_codec.encode(encrypted_chunk)[-ECC_BYTES:]
                                     outfile.write(parity)
                                 processed_size += chunk_len
-                                if self.progress_callback: self.progress_callback(processed_size / total_size * 100)
+                                offset += chunk_len
+                                chunk_count += 1
+                                del encrypted_chunk
+                                if chunk_count % _GC_CHUNK_INTERVAL == 0:
+                                    gc.collect()
+                                if self.progress_callback:
+                                    self.progress_callback(processed_size / total_size * 100)
+                        del mv
                 except (OSError, ValueError):
-                    infile.seek(0)
-                    while True:
-                        if self.is_canceled: raise Exception("Operation canceled by user.")
-                        chunk = infile.read(self.chunk_size)
-                        if not chunk: break
-                        compressed_chunk, compression_id = compress_chunk(chunk, effective_compression_level)
-                        if first_chunk:
-                            final_compression_id = compression_id
-                            first_chunk = False
-                        if final_compression_id == COMPRESSION_NONE:
-                            compressed_chunk = chunk
-                        elif compression_id == COMPRESSION_NONE:
-                            mode = COMPRESSION_MODES[effective_compression_level]
-                            compressed_chunk = mode["func"](chunk)
-                        chunk_nonce = os.urandom(NONCE_SIZE)
-                        encrypted_chunk = cipher.encrypt(chunk_nonce, compressed_chunk, associated_data=header_bytes)
-                        outfile.write(chunk_nonce)
-                        outfile.write(struct.pack("!I", len(encrypted_chunk)))
-                        outfile.write(encrypted_chunk)
-                        if rs_codec:
-                            parity = rs_codec.encode(encrypted_chunk)[-ECC_BYTES:]
-                            outfile.write(parity)
-                        processed_size += len(chunk)
-                        if self.progress_callback: self.progress_callback(processed_size / total_size * 100)
-            else:
+                    use_mmap = False
+
+            if not use_mmap: ## fallback or smth i guess
+                infile.seek(0)
                 while True:
-                    if self.is_canceled: raise Exception("Operation canceled by user.")
+                    if self.is_canceled:
+                        raise Exception("Operation canceled by user.")
                     chunk = infile.read(self.chunk_size)
-                    if not chunk: break
+                    if not chunk:
+                        break
                     compressed_chunk, compression_id = compress_chunk(chunk, effective_compression_level)
                     if first_chunk:
                         final_compression_id = compression_id
@@ -404,7 +488,12 @@ class CryptoWorker:
                         parity = rs_codec.encode(encrypted_chunk)[-ECC_BYTES:]
                         outfile.write(parity)
                     processed_size += len(chunk)
-                    if self.progress_callback: self.progress_callback(processed_size / total_size * 100)
+                    chunk_count += 1
+                    del chunk, compressed_chunk, encrypted_chunk
+                    if chunk_count % _GC_CHUNK_INTERVAL == 0:
+                        gc.collect()
+                    if self.progress_callback:
+                        self.progress_callback(processed_size / total_size * 100)
         if self.progress_callback: self.progress_callback(100.0)
 
     def _encrypt_archive(self):
@@ -480,6 +569,7 @@ class CryptoWorker:
             first_chunk = True
             final_compression_id = COMPRESSION_NONE
             processed_size = 0
+            max_in_flight = self.max_workers * 2
             
             def data_stream():
                 yield archive_header
@@ -492,53 +582,33 @@ class CryptoWorker:
                             if not chunk:
                                 break
                             yield chunk
-            chunk_batch = []
-            batch_size = self.max_workers * 2
-            for chunk_data in data_stream():
-                if self.is_canceled:
-                    raise Exception("Operation canceled by user.")
-                chunk_batch.append(chunk_data)
-                if len(chunk_batch) >= batch_size or (effective_compression_level == "none"):
-                    if effective_compression_level != "none" and len(chunk_batch) > 1:
-                        with ThreadPoolExecutor(max_workers=self.max_workers) as executor:
-                            futures = [executor.submit(compress_chunk_threaded, chunk, effective_compression_level) for chunk in chunk_batch]
-                            for future in futures:
-                                if self.is_canceled:
-                                    raise Exception("Operation canceled by user.")
-                                compressed_chunk, compression_id = future.result()
-                                if first_chunk:
-                                    final_compression_id = compression_id
-                                    first_chunk = False
-                                if final_compression_id == COMPRESSION_NONE and compression_id != COMPRESSION_NONE:
-                                    compressed_chunk = decompress_chunk(compressed_chunk, compression_id)
-                                elif final_compression_id != COMPRESSION_NONE and compression_id == COMPRESSION_NONE:
-                                    mode = COMPRESSION_MODES[effective_compression_level]
-                                    compressed_chunk = mode["func"](compressed_chunk)
-                                chunk_nonce = os.urandom(NONCE_SIZE)
-                                encrypted_chunk = cipher.encrypt(chunk_nonce, compressed_chunk, associated_data=header_bytes)
-                                outfile.write(chunk_nonce)
-                                outfile.write(struct.pack("!I", len(encrypted_chunk)))
-                                outfile.write(encrypted_chunk)
-                                if rs_codec:
-                                    parity = rs_codec.encode(encrypted_chunk)[-ECC_BYTES:]
-                                    outfile.write(parity)
-                                processed_size += len(chunk_data)
-                                if self.progress_callback:
-                                    progress = 50.0 + (processed_size / (len(archive_header) + total_source_size)) * 50.0
-                                    self.progress_callback(min(100.0, progress))
-                    else:
-                        for chunk in chunk_batch:
+            if effective_compression_level != "none":
+                with ThreadPoolExecutor(max_workers=self.max_workers) as executor:
+                    pending_futures = []
+                    data_iterator = data_stream()
+                    exhausted = False
+                    while not exhausted or pending_futures:
+                        while len(pending_futures) < max_in_flight and not exhausted:
                             if self.is_canceled:
                                 raise Exception("Operation canceled by user.")
-                            compressed_chunk, compression_id = compress_chunk(chunk, effective_compression_level)
+                            try:
+                                chunk_data = next(data_iterator)
+                                future = executor.submit(compress_chunk_threaded, chunk_data, effective_compression_level)
+                                pending_futures.append((future, len(chunk_data)))
+                            except StopIteration:
+                                exhausted = True
+                                break
+                        if pending_futures:
+                            future, original_len = pending_futures.pop(0)
+                            compressed_chunk, compression_id = future.result()
                             if first_chunk:
                                 final_compression_id = compression_id
                                 first_chunk = False
-                            if final_compression_id == COMPRESSION_NONE:
-                                compressed_chunk = chunk
-                            elif compression_id == COMPRESSION_NONE:
+                            if final_compression_id == COMPRESSION_NONE and compression_id != COMPRESSION_NONE:
+                                compressed_chunk = decompress_chunk(compressed_chunk, compression_id)
+                            elif final_compression_id != COMPRESSION_NONE and compression_id == COMPRESSION_NONE:
                                 mode = COMPRESSION_MODES[effective_compression_level]
-                                compressed_chunk = mode["func"](chunk)
+                                compressed_chunk = mode["func"](compressed_chunk)
                             chunk_nonce = os.urandom(NONCE_SIZE)
                             encrypted_chunk = cipher.encrypt(chunk_nonce, compressed_chunk, associated_data=header_bytes)
                             outfile.write(chunk_nonce)
@@ -547,13 +617,12 @@ class CryptoWorker:
                             if rs_codec:
                                 parity = rs_codec.encode(encrypted_chunk)[-ECC_BYTES:]
                                 outfile.write(parity)
-                            processed_size += len(chunk)
+                            processed_size += original_len
                             if self.progress_callback:
                                 progress = 50.0 + (processed_size / (len(archive_header) + total_source_size)) * 50.0
                                 self.progress_callback(min(100.0, progress))
-                    chunk_batch.clear()
-            if chunk_batch:
-                for chunk in chunk_batch:
+            else:
+                for chunk in data_stream():
                     if self.is_canceled:
                         raise Exception("Operation canceled by user.")
                     compressed_chunk, compression_id = compress_chunk(chunk, effective_compression_level)
@@ -632,107 +701,147 @@ class CryptoWorker:
             try:
                 original_ext = cipher.decrypt(ext_nonce, encrypted_ext, None).decode("utf-8")
             except InvalidTag:
-                raise ValueError("Incorrect password/key or corrupt file.")
-            decrypted_data = bytearray()
+                raise ValueError("Incorrect password / key or corrupt file.")
             total_size = os.path.getsize(self.in_path)
             rs_codec = reedsolo.RSCodec(ecc_bytes) if recovery_enabled else None
-            chunk_data = []
-            max_sane_chunk_len = self.chunk_size + TAG_SIZE + 1024 
-            while True:
-                if self.is_canceled: raise Exception("Operation canceled by user.")
-                chunk_nonce = infile.read(NONCE_SIZE)
-                if not chunk_nonce: break
-                if len(chunk_nonce) != NONCE_SIZE:
-                    raise ValueError("Invalid file: truncated nonce read.")
-                len_bytes = infile.read(4)
-                if not len_bytes: break
-                if len(len_bytes) != 4:
-                    raise ValueError("Invalid file: truncated chunk length read.")
+            max_sane_chunk_len = self.chunk_size + TAG_SIZE + 1024
+            if is_archive and original_ext == "archive":
+                out_dir = self.output_dir or os.path.dirname(self.in_path)
+                base_filename = os.path.splitext(os.path.basename(self.in_path))[0]
+                extract_dir = os.path.join(out_dir, f"{base_filename}_extracted")
+                if os.path.exists(extract_dir):
+                    counter = 1
+                    while os.path.exists(f"{extract_dir}_{counter}"):
+                        counter += 1
+                    extract_dir = f"{extract_dir}_{counter}"
+                _tmp_fd, _tmp_path = tempfile.mkstemp(suffix=".pykx_tmp", dir=out_dir)
+                outfile_handle = os.fdopen(_tmp_fd, "wb")
+                write_to_file = True
+                _is_archive_tmp = True
+            else:
+                out_dir = self.output_dir or os.path.dirname(self.in_path)
+                base_filename = os.path.splitext(os.path.basename(self.in_path))[0]
+                out_path = os.path.join(out_dir, f"{base_filename}.{original_ext}")
+                if os.path.exists(out_path) and not os.path.samefile(self.in_path, out_path):
+                    raise IOError(f"Output file '{os.path.basename(out_path)}' already exists.")
+                outfile_handle = open(out_path, "wb")
+                write_to_file = True
+                _is_archive_tmp = False
+            infile.seek(header_end_pos)
+            chunk_count = 0
+            max_in_flight = self.max_workers * 2
+
+            def read_chunk_header(f):
+                chunk_nonce = f.read(NONCE_SIZE)
+                if not chunk_nonce or len(chunk_nonce) != NONCE_SIZE:
+                    return None
+                len_bytes = f.read(4)
+                if not len_bytes or len(len_bytes) != 4:
+                    raise ValueError("Invalid file: truncated chunk length.")
                 encrypted_chunk_len = struct.unpack("!I", len_bytes)[0]
                 if encrypted_chunk_len == 0:
-                    raise ValueError("Invalid file: found 0-length data chunk.")
+                    raise ValueError("Invalid file: 0-length data chunk.")
                 if encrypted_chunk_len > max_sane_chunk_len:
-                    raise ValueError(f"Invalid file: chunk length {encrypted_chunk_len}b exceeds limit {max_sane_chunk_len}b.")
-                encrypted_chunk = infile.read(encrypted_chunk_len)
-                if len(encrypted_chunk) != encrypted_chunk_len:
-                    raise ValueError("Invalid file: unexpected end while reading chunk.")
-                parity_data = b""
-                if recovery_enabled:
-                    parity_data = infile.read(ecc_bytes)
-                    if len(parity_data) != ecc_bytes:
-                        raise ValueError("Invalid file: unexpected end while reading recovery data.")
-                if not encrypted_chunk: break
-                chunk_data.append((chunk_nonce, encrypted_chunk, parity_data))
-            if len(chunk_data) > 4 and compression_id != COMPRESSION_NONE:
-                def decrypt_chunk_worker(chunk_info):
-                    chunk_nonce, encrypted_chunk, parity_data = chunk_info
-                    try:
-                        if rs_codec:
-                            try:
-                                combined_data = bytearray(encrypted_chunk + parity_data)
-                                decrypted_chunk_with_parity, _, _ = rs_codec.decode(combined_data)
-                                encrypted_chunk = bytes(decrypted_chunk_with_parity)
-                            except reedsolo.ReedSolomonError:
-                                raise ValueError("File chunk is corrupt and could not be recovered.")
-                        decrypted_chunk = cipher.decrypt(chunk_nonce, encrypted_chunk, associated_data=header_bytes)
-                        decompressed_chunk = decompress_chunk(decrypted_chunk, compression_id)
-                        return decompressed_chunk
-                    except InvalidTag:
-                        raise ValueError("File appears to be corrupted or password is incorrect (chunk authentication failed).")
-                with ThreadPoolExecutor(max_workers=self.max_workers) as executor:
-                    futures = {executor.submit(decrypt_chunk_worker, chunk_info): i for i, chunk_info in enumerate(chunk_data)}
-                    results = [None] * len(chunk_data)
-                    for future in as_completed(futures):
-                        chunk_index = futures[future]
+                    raise ValueError(f"Invalid file: chunk length {encrypted_chunk_len}b exceeds {max_sane_chunk_len}b.")
+                return (chunk_nonce, encrypted_chunk_len)
+
+            def decrypt_chunk_worker(chunk_nonce, encrypted_chunk, parity_data):
+                try:
+                    if rs_codec and parity_data:
                         try:
-                            results[chunk_index] = future.result()
-                        except Exception as e:
-                            raise e
-                        processed_chunks = chunk_index + 1
+                            combined_data = bytearray(encrypted_chunk + parity_data)
+                            decrypted_chunk_with_parity, _, _ = rs_codec.decode(combined_data)
+                            encrypted_chunk = bytes(decrypted_chunk_with_parity)
+                        except reedsolo.ReedSolomonError:
+                            raise ValueError("File chunk is corrupt and could not be recovered.")
+                    decrypted_chunk = cipher.decrypt(chunk_nonce, encrypted_chunk, associated_data=header_bytes)
+                    decompressed_chunk = decompress_chunk(decrypted_chunk, compression_id)
+                    return decompressed_chunk
+                except InvalidTag:
+                    raise ValueError("File appears to be corrupted or password is incorrect (chunk authentication failed).")
+            try:
+                if compression_id != COMPRESSION_NONE:
+                    with ThreadPoolExecutor(max_workers=self.max_workers) as executor:
+                        pending_futures = []
+                        while True:
+                            if self.is_canceled:
+                                outfile_handle.close()
+                                raise Exception("Operation canceled by user.")
+                            while len(pending_futures) < max_in_flight:
+                                header = read_chunk_header(infile)
+                                if header is None:
+                                    break
+                                chunk_nonce, encrypted_chunk_len = header
+                                encrypted_chunk = infile.read(encrypted_chunk_len)
+                                if len(encrypted_chunk) != encrypted_chunk_len:
+                                    raise ValueError("Invalid file: unexpected end while reading chunk.")
+                                parity_data = b""
+                                if recovery_enabled:
+                                    parity_data = infile.read(ecc_bytes)
+                                    if len(parity_data) != ecc_bytes:
+                                        raise ValueError("Invalid file: unexpected end while reading recovery data.")
+                                future = executor.submit(decrypt_chunk_worker, chunk_nonce, encrypted_chunk, parity_data)
+                                pending_futures.append((future, chunk_count))
+                                chunk_count += 1
+                            if not pending_futures:
+                                break
+                            future, chunk_idx = pending_futures.pop(0)
+                            decompressed_chunk = future.result()
+                            outfile_handle.write(decompressed_chunk)
+                            del decompressed_chunk
+                            if chunk_count % _GC_CHUNK_INTERVAL == 0:
+                                gc.collect()
+                            if total_size > header_end_pos:
+                                progress = min(100.0, (chunk_count / max(1, (total_size - header_end_pos) // (self.chunk_size + 100))) * 70)
+                                if self.progress_callback:
+                                    self.progress_callback(progress)
+                else:
+                    while True:
+                        if self.is_canceled:
+                            outfile_handle.close()
+                            raise Exception("Operation canceled by user.")
+                        header = read_chunk_header(infile)
+                        if header is None:
+                            break
+                        chunk_nonce, encrypted_chunk_len = header
+                        encrypted_chunk = infile.read(encrypted_chunk_len)
+                        if len(encrypted_chunk) != encrypted_chunk_len:
+                            raise ValueError("Invalid file: unexpected end while reading chunk.")
+                        parity_data = b""
+                        if recovery_enabled:
+                            parity_data = infile.read(ecc_bytes)
+                            if len(parity_data) != ecc_bytes:
+                                raise ValueError("Invalid file: unexpected end while reading recovery data.")
+                        decompressed_chunk = decrypt_chunk_worker(chunk_nonce, encrypted_chunk, parity_data)
+                        outfile_handle.write(decompressed_chunk)
+                        chunk_count += 1
+                        del encrypted_chunk, decompressed_chunk
+                        if chunk_count % _GC_CHUNK_INTERVAL == 0:
+                            gc.collect()
                         if total_size > header_end_pos:
-                            progress = min(100.0, (processed_chunks / len(chunk_data)) * 70)
+                            progress = min(100.0, (chunk_count / max(1, (total_size - header_end_pos) // (self.chunk_size + 100))) * 70)
                             if self.progress_callback:
                                 self.progress_callback(progress)
-                for result in results:
-                    decrypted_data.extend(result)
-            else:
-                for i, (chunk_nonce, encrypted_chunk, parity_data) in enumerate(chunk_data):
-                    if self.is_canceled: raise Exception("Operation canceled by user.")
+                outfile_handle.close()
+                if _is_archive_tmp:
                     try:
-                        if rs_codec:
-                            try:
-                                combined_data = bytearray(encrypted_chunk + parity_data)
-                                decrypted_chunk_with_parity, _, _ = rs_codec.decode(combined_data)
-                                encrypted_chunk = bytes(decrypted_chunk_with_parity)
-                            except reedsolo.ReedSolomonError:
-                                raise ValueError("File chunk is corrupt and could not be recovered.")
-                        decrypted_chunk = cipher.decrypt(chunk_nonce, encrypted_chunk, associated_data=header_bytes)
-                        decompressed_chunk = decompress_chunk(decrypted_chunk, compression_id)
-                        decrypted_data.extend(decompressed_chunk)
-                    except InvalidTag:
-                        raise ValueError("File appears to be corrupted or password is incorrect (chunk authentication failed).")
-                    if total_size > header_end_pos:
-                        progress = min(100.0, ((i + 1) / len(chunk_data)) * 70)
-                        if self.progress_callback:
-                            self.progress_callback(progress)
-        if is_archive and original_ext == "archive":
-            out_dir = self.output_dir or os.path.dirname(self.in_path)
-            base_filename = os.path.splitext(os.path.basename(self.in_path))[0]
-            extract_dir = os.path.join(out_dir, f"{base_filename}_extracted")
-            if os.path.exists(extract_dir):
-                counter = 1
-                while os.path.exists(f"{extract_dir}_{counter}"):
-                    counter += 1
-                extract_dir = f"{extract_dir}_{counter}"
-            extract_archive(bytes(decrypted_data), extract_dir, lambda p: self.progress_callback(70 + p * 0.3) if self.progress_callback else None)
-        else:
-            out_dir = self.output_dir or os.path.dirname(self.in_path)
-            base_filename = os.path.splitext(os.path.basename(self.in_path))[0]
-            out_path = os.path.join(out_dir, f"{base_filename}.{original_ext}")
-            if os.path.exists(out_path) and not os.path.samefile(self.in_path, out_path):
-                raise IOError(f"Output file '{os.path.basename(out_path)}' already exists.")
-            with open(out_path, "wb") as outfile:
-                outfile.write(decrypted_data)
+                        extract_archive_streaming(_tmp_path, extract_dir, lambda p: self.progress_callback(70 + p * 0.3) if self.progress_callback else None)
+                    finally:
+                        try:
+                            os.unlink(_tmp_path)
+                        except OSError:
+                            pass
+            except Exception:
+                try:
+                    outfile_handle.close()
+                except Exception:
+                    pass
+                if _is_archive_tmp:
+                    try:
+                        os.unlink(_tmp_path)
+                    except OSError:
+                        pass
+                raise
         if self.progress_callback: self.progress_callback(100.0)
 
     def _decrypt_legacy_file(self, version):
@@ -796,108 +905,147 @@ class CryptoWorker:
                 original_ext = cipher.decrypt(ext_nonce, encrypted_ext, None).decode("utf-8")
             except InvalidTag:
                 raise ValueError("Incorrect password or corrupt file extension data.")
-            decrypted_data = bytearray()
-            total_size = os.path.getsize(self.in_path)
             header_size = infile.tell()
+            total_size = os.path.getsize(self.in_path)
             rs_codec = reedsolo.RSCodec(ecc_bytes) if recovery_enabled else None
-            chunk_data = []
-            max_sane_chunk_len = self.chunk_size + TAG_SIZE + 1024 
-            while True:
-                if self.is_canceled: raise Exception("Operation canceled by user.")
-                chunk_nonce = infile.read(NONCE_SIZE)
-                if not chunk_nonce: break
-                if len(chunk_nonce) != NONCE_SIZE:
-                    raise ValueError("Invalid file: truncated nonce read.")
-                len_bytes = infile.read(4)
-                if not len_bytes: break
-                if len(len_bytes) != 4:
-                    raise ValueError("Invalid file: truncated chunk length read.")
+            max_sane_chunk_len = self.chunk_size + TAG_SIZE + 1024
+            if is_archive and original_ext == "archive":
+                out_dir = self.output_dir or os.path.dirname(self.in_path)
+                base_filename = os.path.splitext(os.path.basename(self.in_path))[0]
+                extract_dir = os.path.join(out_dir, f"{base_filename}_extracted")
+                if os.path.exists(extract_dir):
+                    counter = 1
+                    while os.path.exists(f"{extract_dir}_{counter}"):
+                        counter += 1
+                    extract_dir = f"{extract_dir}_{counter}"
+                _tmp_fd, _tmp_path = tempfile.mkstemp(suffix=".pykx_tmp", dir=out_dir)
+                outfile_handle = os.fdopen(_tmp_fd, "wb")
+                write_to_file = True
+                _is_archive_tmp = True
+            else:
+                out_dir = self.output_dir or os.path.dirname(self.in_path)
+                base_filename = os.path.splitext(os.path.basename(self.in_path))[0]
+                out_path = os.path.join(out_dir, f"{base_filename}.{original_ext}")
+                if os.path.exists(out_path) and not os.path.samefile(self.in_path, out_path):
+                    raise IOError(f"Output file '{os.path.basename(out_path)}' already exists.")
+                outfile_handle = open(out_path, "wb")
+                write_to_file = True
+                _is_archive_tmp = False
+            chunk_count = 0
+            max_in_flight = self.max_workers * 2
+
+            def read_chunk_header(f):
+                chunk_nonce = f.read(NONCE_SIZE)
+                if not chunk_nonce or len(chunk_nonce) != NONCE_SIZE:
+                    return None
+                len_bytes = f.read(4)
+                if not len_bytes or len(len_bytes) != 4:
+                    raise ValueError("Invalid file: truncated chunk length.")
                 encrypted_chunk_len = struct.unpack("!I", len_bytes)[0]
                 if encrypted_chunk_len == 0:
-                    raise ValueError("Invalid file: found 0-length data chunk.")
+                    raise ValueError("Invalid file: 0-length data chunk.")
                 if encrypted_chunk_len > max_sane_chunk_len:
-                    raise ValueError(f"Invalid file: chunk length {encrypted_chunk_len}b exceeds limit {max_sane_chunk_len}b.")
-                encrypted_chunk = infile.read(encrypted_chunk_len)
-                if len(encrypted_chunk) != encrypted_chunk_len:
-                    raise ValueError("Invalid file: unexpected end while reading chunk.")
-                parity_data = b""
-                if recovery_enabled:
-                    parity_data = infile.read(ecc_bytes)
-                    if len(parity_data) != ecc_bytes:
-                        raise ValueError("Invalid file: unexpected end while reading recovery data.")
-                if not encrypted_chunk: break
-                chunk_data.append((chunk_nonce, encrypted_chunk, parity_data))
-            if len(chunk_data) > 4 and compression_id != COMPRESSION_NONE:
-                def decrypt_chunk_worker(chunk_info):
-                    chunk_nonce, encrypted_chunk, parity_data = chunk_info
-                    try:
-                        if rs_codec:
-                            try:
-                                combined_data = bytearray(encrypted_chunk + parity_data)
-                                decrypted_chunk_with_parity, _, _ = rs_codec.decode(combined_data)
-                                encrypted_chunk = bytes(decrypted_chunk_with_parity)
-                            except reedsolo.ReedSolomonError:
-                                raise ValueError("File chunk is corrupt and could not be recovered.")
-                        decrypted_chunk = cipher.decrypt(chunk_nonce, encrypted_chunk, None)
-                        decompressed_chunk = decompress_chunk(decrypted_chunk, compression_id)
-                        return decompressed_chunk
-                    except InvalidTag:
-                        raise ValueError("File appears to be corrupted or password is incorrect (chunk authentication failed).")
-                with ThreadPoolExecutor(max_workers=self.max_workers) as executor:
-                    futures = {executor.submit(decrypt_chunk_worker, chunk_info): i for i, chunk_info in enumerate(chunk_data)}
-                    results = [None] * len(chunk_data)
-                    for future in as_completed(futures):
-                        chunk_index = futures[future]
+                    raise ValueError(f"Invalid file: chunk length {encrypted_chunk_len}b exceeds {max_sane_chunk_len}b.")
+                return (chunk_nonce, encrypted_chunk_len)
+
+            def decrypt_chunk_worker(chunk_nonce, encrypted_chunk, parity_data):
+                try:
+                    if rs_codec and parity_data:
                         try:
-                            results[chunk_index] = future.result()
-                        except Exception as e:
-                            raise e
-                        processed_chunks = chunk_index + 1
+                            combined_data = bytearray(encrypted_chunk + parity_data)
+                            decrypted_chunk_with_parity, _, _ = rs_codec.decode(combined_data)
+                            encrypted_chunk = bytes(decrypted_chunk_with_parity)
+                        except reedsolo.ReedSolomonError:
+                            raise ValueError("File chunk is corrupt and could not be recovered.")
+                    decrypted_chunk = cipher.decrypt(chunk_nonce, encrypted_chunk, None)
+                    decompressed_chunk = decompress_chunk(decrypted_chunk, compression_id)
+                    return decompressed_chunk
+                except InvalidTag:
+                    raise ValueError("File appears to be corrupted or password is incorrect (chunk authentication failed).")
+            try:
+                if compression_id != COMPRESSION_NONE:
+                    with ThreadPoolExecutor(max_workers=self.max_workers) as executor:
+                        pending_futures = []
+                        while True:
+                            if self.is_canceled:
+                                outfile_handle.close()
+                                raise Exception("Operation canceled by user.")
+                            while len(pending_futures) < max_in_flight:
+                                header = read_chunk_header(infile)
+                                if header is None:
+                                    break
+                                chunk_nonce, encrypted_chunk_len = header
+                                encrypted_chunk = infile.read(encrypted_chunk_len)
+                                if len(encrypted_chunk) != encrypted_chunk_len:
+                                    raise ValueError("Invalid file: unexpected end while reading chunk.")
+                                parity_data = b""
+                                if recovery_enabled:
+                                    parity_data = infile.read(ecc_bytes)
+                                    if len(parity_data) != ecc_bytes:
+                                        raise ValueError("Invalid file: unexpected end while reading recovery data.")
+                                future = executor.submit(decrypt_chunk_worker, chunk_nonce, encrypted_chunk, parity_data)
+                                pending_futures.append((future, chunk_count))
+                                chunk_count += 1
+                            if not pending_futures:
+                                break
+                            future, chunk_idx = pending_futures.pop(0)
+                            decompressed_chunk = future.result()
+                            outfile_handle.write(decompressed_chunk)
+                            del decompressed_chunk
+                            if chunk_count % _GC_CHUNK_INTERVAL == 0:
+                                gc.collect()
+                            if total_size > header_size:
+                                progress = min(100.0, (chunk_count / max(1, (total_size - header_size) // (self.chunk_size + 100))) * 70)
+                                if self.progress_callback:
+                                    self.progress_callback(progress)
+                else:
+                    while True:
+                        if self.is_canceled:
+                            outfile_handle.close()
+                            raise Exception("Operation canceled by user.")
+                        header = read_chunk_header(infile)
+                        if header is None:
+                            break
+                        chunk_nonce, encrypted_chunk_len = header
+                        encrypted_chunk = infile.read(encrypted_chunk_len)
+                        if len(encrypted_chunk) != encrypted_chunk_len:
+                            raise ValueError("Invalid file: unexpected end while reading chunk.")
+                        parity_data = b""
+                        if recovery_enabled:
+                            parity_data = infile.read(ecc_bytes)
+                            if len(parity_data) != ecc_bytes:
+                                raise ValueError("Invalid file: unexpected end while reading recovery data.")
+                        decompressed_chunk = decrypt_chunk_worker(chunk_nonce, encrypted_chunk, parity_data)
+                        outfile_handle.write(decompressed_chunk)
+                        chunk_count += 1
+                        del encrypted_chunk, decompressed_chunk
+                        if chunk_count % _GC_CHUNK_INTERVAL == 0:
+                            gc.collect() ## fuck this garbage collector i'd rather write it in rust
                         if total_size > header_size:
-                            progress = min(100.0, (processed_chunks / len(chunk_data)) * 70)
+                            progress = min(100.0, (chunk_count / max(1, (total_size - header_size) // (self.chunk_size + 100))) * 70)
                             if self.progress_callback:
                                 self.progress_callback(progress)
-                for result in results:
-                    decrypted_data.extend(result)
-            else:
-                for i, (chunk_nonce, encrypted_chunk, parity_data) in enumerate(chunk_data):
-                    if self.is_canceled: raise Exception("Operation canceled by user.")
+                outfile_handle.close()
+                if _is_archive_tmp:
                     try:
-                        if rs_codec:
-                            try:
-                                combined_data = bytearray(encrypted_chunk + parity_data)
-                                decrypted_chunk_with_parity, _, _ = rs_codec.decode(combined_data)
-                                encrypted_chunk = bytes(decrypted_chunk_with_parity)
-                            except reedsolo.ReedSolomonError:
-                                raise ValueError("File chunk is corrupt and could not be recovered.")
-                        decrypted_chunk = cipher.decrypt(chunk_nonce, encrypted_chunk, None)
-                        decompressed_chunk = decompress_chunk(decrypted_chunk, compression_id)
-                        decrypted_data.extend(decompressed_chunk)
-                    except InvalidTag:
-                        raise ValueError("File appears to be corrupted or password is incorrect (chunk authentication failed).")
-                    if total_size > header_size:
-                        progress = min(100.0, ((i + 1) / len(chunk_data)) * 70)
-                        if self.progress_callback:
-                            self.progress_callback(progress)
-        if is_archive and original_ext == "archive":
-            out_dir = self.output_dir or os.path.dirname(self.in_path)
-            base_filename = os.path.splitext(os.path.basename(self.in_path))[0]
-            extract_dir = os.path.join(out_dir, f"{base_filename}_extracted")
-            if os.path.exists(extract_dir):
-                counter = 1
-                while os.path.exists(f"{extract_dir}_{counter}"):
-                    counter += 1
-                extract_dir = f"{extract_dir}_{counter}"
-            extract_archive(bytes(decrypted_data), extract_dir,
-                          lambda p: self.progress_callback(70 + p * 0.3) if self.progress_callback else None)
-        else:
-            out_dir = self.output_dir or os.path.dirname(self.in_path)
-            base_filename = os.path.splitext(os.path.basename(self.in_path))[0]
-            out_path = os.path.join(out_dir, f"{base_filename}.{original_ext}")
-            if os.path.exists(out_path) and not os.path.samefile(self.in_path, out_path):
-                raise IOError(f"Output file '{os.path.basename(out_path)}' already exists.")
-            with open(out_path, "wb") as outfile:
-                outfile.write(decrypted_data)
+                        extract_archive_streaming(_tmp_path, extract_dir, lambda p: self.progress_callback(70 + p * 0.3) if self.progress_callback else None)
+                    finally:
+                        try:
+                            os.unlink(_tmp_path)
+                        except OSError:
+                            pass
+
+            except Exception:
+                try:
+                    outfile_handle.close()
+                except Exception:
+                    pass
+                if _is_archive_tmp:
+                    try:
+                        os.unlink(_tmp_path)
+                    except OSError:
+                        pass
+                raise
         if self.progress_callback: self.progress_callback(100.0)
 
 class BatchProcessorThread(QThread):
@@ -953,12 +1101,20 @@ class BatchProcessorThread(QThread):
                 self.errors.append(f"Archive creation failed: {str(e)}")
         else:
             total_files = len(self.file_paths)
+            _emit_every = _BATCH_PROGRESS_INTERVAL if total_files > _BATCH_PROGRESS_INTERVAL else 1
             for i, file_path in enumerate(self.file_paths):
                 if self.is_canceled: break
-                self.batch_progress_updated.emit(i + 1, total_files)
-                self.status_message.emit(f"Processing: {os.path.basename(file_path)}")
+                if os.path.isdir(file_path):
+                    self.errors.append(f"Skipped '{os.path.basename(file_path)}': directories must be added to an archive.")
+                    continue
+                if not os.path.isfile(file_path):
+                    self.errors.append(f"Skipped '{os.path.basename(file_path)}': file not found.")
+                    continue
+                if i % _emit_every == 0 or i == total_files - 1:
+                    self.batch_progress_updated.emit(i + 1, total_files)
+                    self.status_message.emit(f"Processing: {os.path.basename(file_path)}")
                 try:
-                    out_path = file_path 
+                    out_path = file_path
                     if self.output_dir:
                         out_path = os.path.join(self.output_dir, os.path.basename(file_path))
                     self.worker = CryptoWorker(operation=self.operation, in_path=file_path, out_path=out_path, password=self.password, custom_ext=self.custom_ext, new_name_type=self.new_name_type, output_dir=self.output_dir, chunk_size=self.chunk_size, kdf_iterations=self.kdf_iterations, secure_clear=self.secure_clear, add_recovery_data=self.add_recovery_data, compression_level=self.compression_level, archive_mode=self.archive_mode, use_argon2=self.use_argon2, argon2_time_cost=self.argon2_time_cost, argon2_memory_cost=self.argon2_memory_cost, argon2_parallelism=self.argon2_parallelism, aead_algorithm=self.aead_algorithm, pbkdf2_hash=self.pbkdf2_hash, usb_key_path=self.usb_key_path, keyfile_path=self.keyfile_path, compression_detection_mode=self.compression_detection_mode, entropy_threshold=self.entropy_threshold, progress_callback=lambda p: self.progress_updated.emit(p))
