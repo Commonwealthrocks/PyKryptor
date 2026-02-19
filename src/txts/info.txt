@@ -66,8 +66,8 @@ Crypto library: cryptography (Rust / C based)
 Compression: zlib, zstandard, lzma
 Compiler: Nuitka (when distributed)
 Platform: Windows based, Linux / macOS untested
-Build version: 1-0-0-2-2-0-2-6
-Version: 1.7
+Build version: 1-9-0-2-2-0-2-6
+Version: 1.8
 
 KNOWN LIMITATIONS:
 No file shredding after encryption.
