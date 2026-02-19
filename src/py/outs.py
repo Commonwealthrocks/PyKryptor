@@ -1,7 +1,8 @@
 ## outs.py
-## last updated: 10/02/2026 <d/m/y>
+## last updated: 18/02/2026 <d/m/y>
 ## p-y-k-x
 import os
+import time
 import tempfile
 import struct
 import glob
@@ -70,31 +71,59 @@ class KeyfileGeneratorDialog(QDialog):
     def __init__(self, parent=None):
         super().__init__(parent)
         self.setWindowTitle("Generate Keyfile")
-        self.setFixedSize(400, 200)
+        self.setFixedSize(520, 340)
         self.setWindowFlags(self.windowFlags() & ~Qt.WindowContextHelpButtonHint)
         enable_win_dark_mode(self)
-        layout = QVBoxLayout(self)
-        info = QLabel("Generate a random 512 byte keyfile.\nThis file can be used in place of, or in addition to, a password.")
-        info.setWordWrap(True)
-        layout.addWidget(info)
-        self.generate_btn = QPushButton("Generate keyfile")
+        main_layout = QVBoxLayout(self)
+        main_layout.setSpacing(12)
+        info_group = QGroupBox("About keyfiles")
+        info_layout = QVBoxLayout()
+        info_label = QLabel("Generate a cryptographically secure 512 byte keyfile.\n\nThis file can be used:\n- Instead of a password.\n- In addition to a password (two factor encryption).\n\nStore it securely; losing it means losing access to encrypted data.")
+        info_label.setWordWrap(True)
+        info_label.setStyleSheet("padding: 8px;")
+        info_layout.addWidget(info_label)
+        info_group.setLayout(info_layout)
+        main_layout.addWidget(info_group)
+        action_group = QGroupBox("Generate")
+        action_layout = QVBoxLayout()
+        self.generate_btn = QPushButton("Generate new keyfile")
+        icon_path = get_resource_path(os.path.join("img", "add_files_img.png"))
+        try:
+            self.generate_btn.setIcon(QIcon(icon_path))
+        except:
+            pass
+        self.generate_btn.setStyleSheet("QPushButton { padding: 8px; font-weight: bold; }")
         self.generate_btn.clicked.connect(self.generate)
-        layout.addWidget(self.generate_btn)
+        action_layout.addWidget(self.generate_btn)
+        action_group.setLayout(action_layout)
+        main_layout.addWidget(action_group)
+        button_layout = QHBoxLayout()
         self.cancel_btn = QPushButton("Cancel")
+        icon_path = get_resource_path(os.path.join("img", "cancel_img.png"))
+        try:
+            self.cancel_btn.setIcon(QIcon(icon_path))
+        except:
+            pass
         self.cancel_btn.clicked.connect(self.reject)
-        layout.addWidget(self.cancel_btn)
+        button_layout.addStretch()
+        button_layout.addWidget(self.cancel_btn)
+        main_layout.addLayout(button_layout)
         
     def generate(self):
-        file_path, _ = QFileDialog.getSaveFileName(self, "Save keyfile", "keyfile.pykx", "PyKryptor ;eyfiles (*.pykx);;All files (*)")
+        file_path, _ = QFileDialog.getSaveFileName(self, "Save keyfile", "keyfile.pykx", "PyKryptor keyfiles (*.pykx);;All files (*)")
         if file_path:
             try:
                 data = os.urandom(512)
                 with open(file_path, "wb") as f:
                     f.write(data)
+                if self.parent() and hasattr(self.parent(), "sound_manager") and not self.parent().mute_sfx:
+                    self.parent().sound_manager.play_sound("success.wav")
                 CustomDialog("Success", f"Keyfile generated successfully at:\n{file_path}", self).exec()
                 self.accept()
             except Exception as e:
-                CustomDialog("Error", f"Failed to generate keyfile.\n\ne:{e}", self).exec()
+                if self.parent() and hasattr(self.parent(), "sound_manager") and not self.parent().mute_sfx:
+                    self.parent().sound_manager.play_sound("error.wav")
+                CustomDialog("Error", f"Failed to generate keyfile.\n\ne: {e}\n", self).exec()
 
 class ArchiveCreationDialog(QDialog):
     def __init__(self, parent=None, current_settings=None):
@@ -223,16 +252,16 @@ class ArchiveCreationDialog(QDialog):
         self.compression_combo.setCurrentText(compression_mapping.get(current_compression, "None"))
         compression_layout.addRow("Compression level:", self.compression_combo)
         self.detection_mode_combo = QComboBox()
-        self.detection_mode_combo.addItems(["Legacy (extension)", "Magic bytes", "Entropy heuristic", "Magic bytes + Entropy", "None (Smart Skipper disabled)"])
+        self.detection_mode_combo.addItems(["None (attempt all)", "Legacy (extension)", "Magic bytes", "Entropy heuristic", "Magic bytes + Entropy"])
         detection_map = {
+            "none": "None (attempt all)",
             "legacy": "Legacy (extension)",
             "magic": "Magic bytes",
             "entropy": "Entropy heuristic",
-            "magic+entropy": "Magic bytes + Entropy",
-            "none": "None (Smart Skipper disabled)"}
+            "magic+entropy": "Magic bytes + Entropy"}
         current_detection = self.current_settings.get("compression_detection", "legacy")
         self.detection_mode_combo.setCurrentText(detection_map.get(current_detection, "Legacy (extension)"))
-        self.detection_mode_combo.setToolTip("Detection mode\n\nWe use the detection mode to check for already compressed\nfiles with PyKryptor. Each one written in C has it's own\nlittle quirks...\n\nLegacy - only checks for certain file extensions and skips\nthose when compressing.\n\nMagic bytes - we use said signatures; as used;\nto check if the file has compressed data or markings too.\n\nEntropy heuristic - samples around 8KB of a non-determined file to see if\nthe compression ratio is worth, or not.\n\nMagic bytes + Entropy - combines 2nd and 3rd methods into one, most accurate.\n\nNone - Disables detection (Smart Skipper); always attempts compression.")
+        self.detection_mode_combo.setToolTip("Detection mode\n\nWe use the detection mode to check for already compressed\nfiles with PyKryptor. Each one written in C has it's own\nlittle quirks...\n\nLegacy - only checks for certain file extensions and skips\nthose when compressing.\n\nMagic bytes - we use said signatures; as used;\nto check if the file has compressed data or markings too.\n\nEntropy heuristic - samples around 8KB of a non-determined file to see if\nthe compression ratio is worth, or not.\n\nMagic bytes + Entropy - combines 2nd and 3rd methods into one, most accurate.\n\nNone - Disables detection (attempt all); always attempts compression.")
         compression_layout.addRow("Detection mode:", self.detection_mode_combo)
         self.entropy_threshold_spinbox = QDoubleSpinBox()
         self.entropy_threshold_spinbox.setRange(6.0, 8.0)
@@ -531,11 +560,11 @@ class ArchiveCreationDialog(QDialog):
             "ULTRAKILL (probably slow)": "ultrakill",
             "[L] ULTRAKILL (???)": "[L] ultrakill"}
         detection_map_rev = {
+            "none": "None (attempt all)",
             "Legacy (extension)": "legacy",
             "Magic bytes": "magic",
             "Entropy heuristic": "entropy",
-            "Magic bytes + Entropy": "magic+entropy",
-            "None (Smart Skipper disabled)": "none"}
+            "Magic bytes + Entropy": "magic+entropy"}
         aead_map_rev = {"AES-256-GCM": "aes-gcm", "ChaCha20-Poly1305": "chacha20-poly1305"}
         self.archive_data = {
             "files": files,
@@ -601,42 +630,137 @@ class ErrorExportDialog(QDialog):
 
 class ProgressDialog(QDialog):
     canceled = pyqtSignal()
-    
+
     def __init__(self, title, parent=None):
         super().__init__(parent)
         self.setWindowTitle(title)
-        self.setFixedSize(400, 150)
+        self.setFixedSize(550, 285)
         self.setWindowFlags(self.windowFlags() & ~Qt.WindowContextHelpButtonHint)
-        layout = QVBoxLayout(self)       
-        self.batch_label = QLabel("Total Progress: (0/0)")
+        enable_win_dark_mode(self)
+        self._start_mono: float = 0.0
+        self._last_update_mono: float = 0.0
+        self._last_bytes_processed: int = 0
+        self.current_bytes_processed: int = 0
+        self.total_bytes: int = 0
+        self.current_speed: float = 0.0 ## always >= 0
+        self.speed_samples: list = []
+        self.max_speed_samples: int = 12
+        main_layout = QVBoxLayout(self)
+        main_layout.setSpacing(12)
+        overall_group = QGroupBox("Overall progress")
+        overall_layout = QVBoxLayout()
+        self.batch_label = QLabel("Files: 0 of 0")
+        self.batch_label.setStyleSheet("font-weight: bold; font-size: 10pt;")
+        overall_layout.addWidget(self.batch_label)
         self.batch_progress_bar = QProgressBar()
         self.batch_progress_bar.setRange(0, 100)
         self.batch_progress_bar.setValue(0)
-        self.file_label = QLabel("Current file:")
+        self.batch_progress_bar.setTextVisible(True)
+        self.batch_progress_bar.setFormat("%p%")
+        overall_layout.addWidget(self.batch_progress_bar)
+        overall_group.setLayout(overall_layout)
+        main_layout.addWidget(overall_group)
+        file_group = QGroupBox("Current file")
+        file_layout = QVBoxLayout()
+        self.file_label = QLabel("preparing...")
+        self.file_label.setWordWrap(True)
+        self.file_label.setStyleSheet("font-weight: bold;")
+        file_layout.addWidget(self.file_label)
         self.file_progress_bar = QProgressBar()
         self.file_progress_bar.setRange(0, 100)
-        self.file_progress_bar.setValue(0)        
+        self.file_progress_bar.setValue(0)
+        self.file_progress_bar.setTextVisible(True)
+        self.file_progress_bar.setFormat("%p%")
+        file_layout.addWidget(self.file_progress_bar)
+        file_group.setLayout(file_layout)
+        main_layout.addWidget(file_group)
+        stats_group = QGroupBox("Statistics")
+        stats_layout = QGridLayout()
+        self.size_label = QLabel("Size: 0 B / 0 B")
+        self.speed_label = QLabel("Speed: 0 MB/s")
+        self.time_elapsed_label = QLabel("Elapsed: 00:00:00")
+        stats_layout.addWidget(QLabel("Processed:"), 0, 0)
+        stats_layout.addWidget(self.size_label, 0, 1)
+        stats_layout.addWidget(QLabel("Speed:"), 1, 0)
+        stats_layout.addWidget(self.speed_label, 1, 1)
+        stats_layout.addWidget(QLabel("Time elapsed:"), 2, 0)
+        stats_layout.addWidget(self.time_elapsed_label, 2, 1)
+        stats_group.setLayout(stats_layout)
+        main_layout.addWidget(stats_group)
         button_layout = QHBoxLayout()
         self.cancel_button = QPushButton("Cancel")
-        enable_win_dark_mode(self)
+        icon_path = get_resource_path(os.path.join("img", "cancel_img.png"))
+        try:
+            self.cancel_button.setIcon(QIcon(icon_path))
+        except Exception:
+            pass
         self.cancel_button.clicked.connect(self.cancel_operation)
         button_layout.addStretch()
         button_layout.addWidget(self.cancel_button)
-        layout.addWidget(self.batch_label)
-        layout.addWidget(self.batch_progress_bar)
-        layout.addWidget(self.file_label)
-        layout.addWidget(self.file_progress_bar)
-        layout.addLayout(button_layout)
-        self.setLayout(layout)
-        
+        main_layout.addLayout(button_layout)
+
     def cancel_operation(self):
         self.canceled.emit()
         self.close()
 
-    def update_batch_progress(self, current, total):
-        self.batch_label.setText(f"Total progress: ({current}/{total})")
+    def set_total_bytes(self, total_bytes: int):
+        self.total_bytes = total_bytes
+        self._start_mono = time.monotonic()
+        self._last_update_mono = self._start_mono
+        self.current_bytes_processed = 0
+        self._last_bytes_processed = 0
+        self.speed_samples.clear()
+        self.current_speed = 0.0
+
+    def update_file_progress(self, progress, current_file=None):
+        if current_file:
+            display = current_file if len(current_file) <= 60 else "..." + current_file[-57:]
+            self.file_label.setText(f"Processing: {display}")
+        self.file_progress_bar.setValue(int(progress))
+
+    def update_batch_progress(self, current: int, total: int):
+        self.batch_label.setText(f"Files: {current} of {total}")
         if total > 0:
             self.batch_progress_bar.setValue(int((current / total) * 100))
+
+    def update_bytes_processed(self, bytes_processed: int):
+        if self._start_mono == 0.0:
+            self._start_mono = time.monotonic()
+            self._last_update_mono = self._start_mono
+        self.current_bytes_processed = bytes_processed
+        now = time.monotonic()
+        elapsed_since_last = now - self._last_update_mono
+        if elapsed_since_last >= 0.1:
+            bytes_diff = self.current_bytes_processed - self._last_bytes_processed
+            if elapsed_since_last > 0 and bytes_diff > 0:
+                speed_bps = bytes_diff / elapsed_since_last
+                self.speed_samples.append(speed_bps)
+                if len(self.speed_samples) > self.max_speed_samples:
+                    self.speed_samples.pop(0)
+                self.current_speed = sum(self.speed_samples) / len(self.speed_samples)
+            elif bytes_diff == 0 and elapsed_since_last > 2.0:
+                self.speed_samples.clear()
+                self.current_speed = 0.0
+            self._last_bytes_processed = self.current_bytes_processed
+            self._last_update_mono = now
+        if self.total_bytes > 0:
+            processed_mb = self.current_bytes_processed / (1024 * 1024)
+            total_mb = self.total_bytes / (1024 * 1024)
+            self.size_label.setText(f"Size: {processed_mb:.2f} MB / {total_mb:.2f} MB")
+        else:
+            processed_mb = self.current_bytes_processed / (1024 * 1024)
+            self.size_label.setText(f"Size: {processed_mb:.2f} MB")
+        speed_mbps = max(0.0, self.current_speed) / (1024 * 1024)
+        if speed_mbps >= 0.01:
+            self.speed_label.setText(f"Speed: {speed_mbps:.2f} MB/s")
+        else:
+            self.speed_label.setText("Speed: N/A")
+        total_elapsed = now - self._start_mono
+        elapsed_s = int(total_elapsed)
+        hours   = elapsed_s // 3600
+        minutes = (elapsed_s % 3600) // 60
+        seconds = elapsed_s % 60
+        self.time_elapsed_label.setText(f"Elapsed: {hours:02d}:{minutes:02d}:{seconds:02d}")
 
 class CustomArgon2Dialog(QDialog):
     def __init__(self, parent=None):
@@ -654,7 +778,7 @@ class CustomArgon2Dialog(QDialog):
             "Sensitive (balanced)": 65536,
             "Paranoid (reaaaaally slow)": 262144,
             "ULTRAKILL (what are you hiding?)": 524288,
-            "Ok bro... (why?)": 1048576}      
+            "Ok bro... (why?)": 1048576} ## this is still a great idea i swear   
         for name, value in presets.items():
             button = QPushButton(f"{name} - {value:,} KB ({value // 1024} MB)")
             button.clicked.connect(lambda checked, v=value: self.set_preset(v))
