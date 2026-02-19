@@ -174,7 +174,7 @@ VERSION 1.6 - 21.12.2025 <d/m/y>
 - Re-coded smart compression into C with a Python
   fallback
   
-VERSION 1.7 - 10.02.2026 <d/m/y> [LATEST]
+VERSION 1.7 - 10.02.2026 <d/m/y>
 - Added full keyfile support (.pykx)
 - Added authentication toggle shortcut
   (CTRL + SHIFT + K)
@@ -188,5 +188,18 @@ VERSION 1.7 - 10.02.2026 <d/m/y> [LATEST]
 - Centralized ALL .dll / .so loading in
   c_base.py now
 - General code cleanup and stability improvements
+
+VERSION 1.8 - 18.02.2026 <d/m/y> [LATEST]
+- Added gc to propely get rid of data
+- Data now streams to disk instead of hogging in
+  RAM
+- Fixed doubled header calls on archive creations
+- Further optimizing of mmap and I / O work
+- Re-worked ProgressDialog to have more details and
+  to be more accurate
+- Re-worked splash screen and added a progress bar
+- Changed that pykryptor_startup.log is now a .txt,
+  yes this is super important
+- Changed some dialogs / text in the main GUI
 
 ## end
