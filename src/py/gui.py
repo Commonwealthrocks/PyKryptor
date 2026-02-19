@@ -1,5 +1,5 @@
 ## gui.py
-## last updated: 10/02/2026 <d/m/y>
+## last updated: 19/02/2026 <d/m/y>
 ## p-y-k-x
 import sys
 import os
@@ -9,14 +9,19 @@ import glob
 import tempfile
 import json
 import struct
+import time
+import importlib
+import contextlib
+import io
 from colorama import *
+
 if sys.platform == "win32":
     try:
         ctypes.windll.kernel32.FreeConsole()
         ctypes.windll.kernel32.AllocConsole()
         sys.stdout = open("CONOUT$", "w")
         sys.stderr = open("CONOUT$", "w")
-        ctypes.windll.kernel32.SetConsoleTitleW("Launching...")
+        ctypes.windll.kernel32.SetConsoleTitleW("PyKryptor splash screen thingy whatever")
     except Exception:
         pass
 init(autoreset=True)
@@ -29,8 +34,53 @@ print(Fore.CYAN + Style.BRIGHT + r"""
         |___/           |___/|_|
 """ + Style.RESET_ALL)
 print(Fore.GREEN + "[INFO] Initializing PyKryptor...")
-print(Fore.GREEN + "[INFO] This MIGHT take a bit..." + Style.RESET_ALL)
+print(Fore.GREEN + "[INFO] This MIGHT (will) take a bit...\n" + Style.RESET_ALL)
 
+class ImportAss:
+    def __enter__(self):
+        self._stdout = sys.stdout
+        self._stderr = sys.stderr
+        sys.stdout = io.StringIO()
+        sys.stderr = io.StringIO()
+
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        sys.stdout = self._stdout
+        sys.stderr = self._stderr
+
+def draw_progress(current, total, label=""):
+    width = 40
+    percent = int((current / total) * 100)
+    filled = int(width * current / total)
+    bar = "#" * filled + " " * (width - filled)
+    sys.stdout.write(f"\r{Fore.YELLOW}{label:<35} " f"[{bar}] {percent}%")
+sys.stdout.flush()
+
+def smooth_advance(start, end, total, label):
+    i2 = 10
+    for i in range(i2):
+        interpolated = start + (end - start) * (i + 1) / i2
+        draw_progress(interpolated, total, label)
+        time.sleep(0.03)
+
+stages = [
+    ("Loading Qtcore...", lambda: importlib.import_module("PySide6.QtCore")),
+    ("Loading Qtwidgets...", lambda: importlib.import_module("PySide6.QtWidgets")),
+    ("Loading QtGUI...", lambda: importlib.import_module("PySide6.QtGui")),
+    ("Loading cryptowork...", lambda: importlib.import_module("core")),
+    ("Loading external GUI...", lambda: importlib.import_module("outs")),
+    ("Loading stylez...", lambda: importlib.import_module("stylez")),
+    ("Loading sound effects...", lambda: importlib.import_module("sfx")),
+    ("Loading C libraries...", lambda: importlib.import_module("c_base")),
+    ("Checking Argon2ID...", lambda: importlib.import_module("argon2")),
+    ("Checking password strenght meter...", lambda: importlib.import_module("zxcvbn")),]
+total_stages = len(stages)
+for index, (label, loader) in enumerate(stages, start=1):
+    try:
+        with ImportAss():
+            loader()
+    except ImportError:
+        pass
+    smooth_advance(index - 1, index, total_stages, label)
 from PySide6.QtWidgets import *
 from PySide6.QtCore import *
 from PySide6.QtGui import *
@@ -38,7 +88,6 @@ from PySide6.QtCore import Signal as pyqtSignal
 try:
     from argon2 import PasswordHasher
     ARGON2_AVAILABLE = True
-    print(Fore.GREEN + "[DEV PRINT] Argon2ID is available; dr2" + Style.RESET_ALL)
 except ImportError:
     ARGON2_AVAILABLE = False
 try:
@@ -53,6 +102,8 @@ from outs import ProgressDialog, CustomDialog, ErrorExportDialog, DebugConsole, 
 from sfx import SoundManager
 from c_base import isca, check_aes_ni, aes_ni_aval, get_resource_path
 
+print(Fore.CYAN + "\nQuick, wasn't it?\n" + Style.RESET_ALL)
+
 def rm_pycache():
     cache_dirs = glob.glob(os.path.join("**", "__pycache__"), recursive=True)
     direct_cache = get_resource_path(os.path.join("__pycache__"))
@@ -65,9 +116,9 @@ def rm_pycache():
             if os.path.exists(cache_path) and os.path.isdir(cache_path):
                 shutil.rmtree(cache_path)
         except PermissionError as e:
-            print(Fore.RED + f"[DEV PRINT] Cannot remove __pycache__ directory from '{cache_path}'.\n\ne: {e}" + Style.RESET_ALL)
+            print(Fore.RED + f"[DEV PRINT] Cannot remove __pycache__ directory from '{cache_path}'.\n\ne: {e}\n" + Style.RESET_ALL)
         except OSError as e:
-            print(Fore.RED + f"[DEV PRINT] Failed to remove __pycache__ from '{cache_path}'.\n\ne: {e}" + Style.RESET_ALL)
+            print(Fore.RED + f"[DEV PRINT] Failed to remove __pycache__ from '{cache_path}'.\n\ne: {e}\n" + Style.RESET_ALL)
 
 def is_admin():
     try:
@@ -230,7 +281,7 @@ class PyKryptor(QWidget):
         except Exception as e:
             if hasattr(self, "sound_manager"):
                 self.sound_manager.play_sound("error.wav")
-            dialog = CustomDialog("Oi blyat...", f"Failed to load settings.\n\ne:{e}", self)
+            dialog = CustomDialog("Oi blyat...", f"Failed to load settings.\n\ne:{e}\n", self)
             dialog.exec()
 
     def save_settings(self):
@@ -548,7 +599,12 @@ class PyKryptor(QWidget):
         self.encrypt_button.setEnabled(False)
         self.decrypt_button.setEnabled(False)
         self.create_archive_button.setEnabled(False)
+        total_bytes = 0
+        for file_path in files:
+            if os.path.isfile(file_path):
+                total_bytes += os.path.getsize(file_path)
         self.progress_dialog = ProgressDialog(f"{operation.capitalize()}ing...", self)
+        self.progress_dialog.set_total_bytes(total_bytes)
         self.progress_dialog.canceled.connect(self.cancel_operation)
         self.progress_dialog.show()
         self.batch_processor = BatchProcessorThread(
@@ -575,9 +631,26 @@ class PyKryptor(QWidget):
             keyfile_path=keyfile_path,
             usb_key_path=usb_key_path, 
             parent=self)
-        self.batch_processor.batch_progress_updated.connect(self.progress_dialog.update_batch_progress)
-        self.batch_processor.status_message.connect(lambda msg: self.progress_dialog.file_label.setText(msg))
-        self.batch_processor.progress_updated.connect(lambda p: self.progress_dialog.file_progress_bar.setValue(int(p)))
+        self._current_file_sizes = [os.path.getsize(f) for f in files if os.path.isfile(f)]
+        self._current_file_index = 0
+        self._bytes_processed_so_far = 0
+        
+        def update_progress(progress):
+            if self._current_file_index < len(self._current_file_sizes):
+                current_file_bytes = int((progress / 100.0) * self._current_file_sizes[self._current_file_index])
+                total_bytes_processed = self._bytes_processed_so_far + current_file_bytes
+                self.progress_dialog.update_bytes_processed(total_bytes_processed)
+            self.progress_dialog.update_file_progress(progress)
+        
+        def update_batch(current, total):
+            self._current_file_index = current - 1
+            # sum([:0]) == 0, so no special-case needed for the first file
+            self._bytes_processed_so_far = sum(self._current_file_sizes[:self._current_file_index])
+            self.progress_dialog.update_batch_progress(current, total)
+        
+        self.batch_processor.batch_progress_updated.connect(update_batch)
+        self.batch_processor.status_message.connect(lambda msg: self.progress_dialog.update_file_progress(self.progress_dialog.file_progress_bar.value(), msg.replace("Processing: ", "")))
+        self.batch_processor.progress_updated.connect(update_progress)
         self.batch_processor.finished.connect(self.on_archive_creation_finished) 
         self.batch_processor.start()
 
@@ -615,10 +688,33 @@ class PyKryptor(QWidget):
         self.encrypt_button.setEnabled(False)
         self.decrypt_button.setEnabled(False)
         self.create_archive_button.setEnabled(False)
+        total_bytes = 0
+        file_sizes = []
+        for file_path in archive_data["files"]:
+            if os.path.isfile(file_path):
+                size = os.path.getsize(file_path)
+                total_bytes += size
+                file_sizes.append(size)
         self.progress_dialog = ProgressDialog("Creating archive...", self)
+        self.progress_dialog.set_total_bytes(total_bytes)
         self.progress_dialog.canceled.connect(self.cancel_operation)
         self.progress_dialog.show()
         output_path = os.path.join(archive_data["output_dir"], archive_data["archive_name"])
+        self._archive_file_sizes = file_sizes
+        self._archive_file_index = 0
+        self._archive_bytes_so_far = 0
+        
+        def update_archive_progress(progress):
+            if total_bytes > 0:
+                total_processed = int((progress / 100.0) * total_bytes)
+                self.progress_dialog.update_bytes_processed(total_processed)
+            self.progress_dialog.update_file_progress(progress)
+        
+        def update_archive_batch(current, total):
+            self._archive_file_index = current - 1
+            self._archive_bytes_so_far = sum(self._archive_file_sizes[:self._archive_file_index])
+            self.progress_dialog.update_batch_progress(current, total)
+        
         self.batch_processor = BatchProcessorThread(
             operation="encrypt",
             file_paths=archive_data["files"],
@@ -644,9 +740,9 @@ class PyKryptor(QWidget):
             compression_detection_mode=archive_data.get("compression_detection", "legacy"),
             entropy_threshold=archive_data.get("entropy_threshold", 7.5),
             parent=self)
-        self.batch_processor.batch_progress_updated.connect(self.progress_dialog.update_batch_progress)
-        self.batch_processor.status_message.connect(lambda msg: self.progress_dialog.file_label.setText(msg))
-        self.batch_processor.progress_updated.connect(lambda p: self.progress_dialog.file_progress_bar.setValue(int(p)))
+        self.batch_processor.batch_progress_updated.connect(update_archive_batch)
+        self.batch_processor.status_message.connect(lambda msg: self.progress_dialog.update_file_progress(self.progress_dialog.file_progress_bar.value(), msg.replace("Processing: ", "").replace("Creating archive...", "Preparing...")))
+        self.batch_processor.progress_updated.connect(update_archive_progress)
         self.batch_processor.finished.connect(self.on_archive_creation_finished)
         self.batch_processor.start()
 
@@ -865,13 +961,13 @@ class PyKryptor(QWidget):
         self.compression_combo.setToolTip("Compression level\n\nCompression makes (or tries) to make files smaller,\nif you want speed it is NOT recommended\nto use compression at all.")
         compression_layout.addRow("Compression level:", self.compression_combo)
         self.detection_mode_combo = QComboBox()
-        self.detection_mode_combo.addItems(["Legacy (extension)", "Magic bytes", "Entropy heuristic", "Magic bytes + Entropy", "None (attempt all)"])
+        self.detection_mode_combo.addItems(["None (attempt all)", "Legacy (extension)", "Magic bytes", "Entropy heuristic", "Magic bytes + Entropy"])
         self.detection_map = {
+            "none": "None (attempt all)",
             "legacy": "Legacy (extension)",
             "magic": "Magic bytes",
             "entropy": "Entropy heuristic",
-            "magic+entropy": "Magic bytes + Entropy",
-            "none": "None (attempt all)"}
+            "magic+entropy": "Magic bytes + Entropy"}
         self.detection_map_rev = {v: k for k, v in self.detection_map.items()}
         self.detection_mode_combo.setCurrentText(self.detection_map.get(self.compression_detection, "Legacy (extension)"))
         self.detection_mode_combo.setToolTip("Detection mode\n\nWe use the detection mode to check for already compressed\nfiles with PyKryptor. Each one written in C has it's own\nlittle quirks...\n\nLegacy - only checks for certain file extensions and skips\nthose when compressing.\n\nMagic bytes - we use said signatures; as used;\nto check if the file has compressed data or markings too.\n\nEntropy heuristic - samples around 8KB of a non-determined file to see if\nthe compression ratio is worth, or not.\n\nMagic bytes + Entropy - combines 2nd and 3rd methods into one, most accurate.\n\nNone - disables skipping entirely; always attempts compression.")
@@ -899,13 +995,13 @@ class PyKryptor(QWidget):
         self.secure_clear_checkbox.setChecked(self.secure_clear)
         if not isca():
             self.secure_clear_checkbox.setEnabled(False)
-            self.secure_clear_checkbox.setToolTip("Disabled: eh, C library not found... a shame for you.")
+            self.secure_clear_checkbox.setToolTip("Disabled: C library for secure memory wiping could not be loaded.\nOh well!")
         else:
-            self.secure_clear_checkbox.stateChanged.connect(lambda state: self.handle_warning_checkbox(state, self.secure_clear_checkbox, "Warning", "This enables a feature to overwrite the password in memory after use.\n\nThis is an experimental security measure and relies on a compiled C library, aka shit MIGHT go wrong!!"))
+            self.secure_clear_checkbox.stateChanged.connect(lambda state: self.handle_warning_checkbox(state, self.secure_clear_checkbox, "Warning", "This enables a feature to overwrite the password in memory after use.\n\nThis relies on a compiled C library, the logic behind it is great itself; but always use with caution if you're unsure."))
         security_layout.addRow("Securely clear password from memory:", self.secure_clear_checkbox)
         self.recovery_checkbox = QCheckBox()
         self.recovery_checkbox.setChecked(self.add_recovery_data)
-        self.recovery_checkbox.stateChanged.connect(lambda state: self.handle_warning_checkbox(state, self.recovery_checkbox, "Warning", "This adds Reedsolo recovery data to each chunk.\n\nThis can help repair files from minor corruption (bit rot) but will increase file size and processing time. It does not protect against malicious tampering fuck face.\n\nThis feature is SO slow in fact that I do not even test it myself :)"))
+        self.recovery_checkbox.stateChanged.connect(lambda state: self.handle_warning_checkbox(state, self.recovery_checkbox, "Warning", "This adds Reedsolo recovery data to each chunk.\n\nThis can help repair files from minor corruption (bit rot) but will increase file size and processing time. It does not protect against malicious tampering if you might be wondering.\n\nThis feature is SO slow in fact that I do not even test it myself :)"))
         security_layout.addRow("Add partial data recovery info:", self.recovery_checkbox)
         security_group.setLayout(security_layout)
         performance_group = QGroupBox("Performance")
@@ -1004,7 +1100,7 @@ class PyKryptor(QWidget):
         info_label = QLabel("PyKryptor")
         info_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         info_label.setStyleSheet("font-size: 16pt; font-weight: bold; margin-bottom: 10px;")
-        subtitle_label = QLabel("WinRAR is probably enough but use this for your needs™")
+        subtitle_label = QLabel("Who even reads this?")
         subtitle_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         subtitle_label.setStyleSheet("font-size: 12pt; font-style: italic; margin-bottom: 20px;")
         disclaimer_text = self.load_disclaimer()
@@ -1064,21 +1160,21 @@ class PyKryptor(QWidget):
             with open(get_resource_path(os.path.join("txts", "disclaimer.txt")), "r", encoding="utf-8") as f:
                 return f.read()
         except Exception:
-            return "Disclaimer not found."
+            return "Disclaimer could not be loaded, it's existace still stands though."
 
     def load_info(self):
         try:
             with open(get_resource_path(os.path.join("txts", "info.txt")), "r", encoding="utf-8") as f:
                 return f.read()
         except Exception:
-            return "Info not found."
+            return "Technical information could not be loaded."
 
     def load_log(self):
         try:
             with open(get_resource_path(os.path.join("txts", "changelog.txt")), "r", encoding="utf-8") as f:
                 return f.read()
         except Exception:
-            return "Changelogs not found."
+            return "Changelogs could not be loaded; find out what's new on your own I guess..."
         
 if __name__ == "__main__":
     try:
@@ -1096,15 +1192,14 @@ if __name__ == "__main__":
             try:
                 hwnd = ctypes.windll.kernel32.GetConsoleWindow()
                 if hwnd:
-                    ctypes.windll.user32.ShowWindow(hwnd, 0) # SW_HIDE
+                    ctypes.windll.user32.ShowWindow(hwnd, 0)
                 ctypes.windll.kernel32.FreeConsole()
                 sys.stdout = None
                 sys.stderr = None
             except Exception:
                 pass
         if window.debug_console:
-            stream_redirect.connect_target(window.debug_console.append_text)
-            
+            stream_redirect.connect_target(window.debug_console.append_text)  
         window.show()
         sys.exit(app.exec())
     except Exception:
@@ -1115,7 +1210,7 @@ if __name__ == "__main__":
            pass
         try:
             log_base = os.path.dirname(sys.executable)if getattr(sys, "frozen", False) else os.getcwd() ## catch a/e
-            logpath = os.path.join(log_base, "pykryptor_startup.log")
+            logpath = os.path.join(log_base, "pykryptor_startup.txt")
             with open(logpath, "a", encoding="utf-8") as f:
                 f.write("Startup exception:\n")
                 _tb.print_exc(file=f)
