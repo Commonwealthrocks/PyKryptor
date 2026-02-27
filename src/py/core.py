@@ -1,5 +1,5 @@
 ## core.py
-## last updated: 18/02/2026 <d/m/y>
+## last updated: 27/02/2026 <d/m/y>
 ## p-y-k-x
 import os
 import io
@@ -156,9 +156,7 @@ def extract_archive_streaming(source_path, output_dir, progress_callback=None):
     safe_output_dir = os.path.realpath(output_dir)
     if not os.path.exists(safe_output_dir):
         os.makedirs(safe_output_dir)
-
     total_size = os.path.getsize(source_path)
-
     with open(source_path, "rb") as src:
         raw = src.read(4)
         if len(raw) < 4:
@@ -238,7 +236,6 @@ class CryptoWorker:
     def _get_combined_password(self):
         pwd_bytes = self.password.encode("utf-8") if self.password else b""
         key_data = b""
-
         if self.usb_key_path:
             try:
                 from usb_codec import get_usb_key
@@ -461,7 +458,6 @@ class CryptoWorker:
                         del mv
                 except (OSError, ValueError):
                     use_mmap = False
-
             if not use_mmap: ## fallback or smth i guess
                 infile.seek(0)
                 while True:
@@ -502,10 +498,6 @@ class CryptoWorker:
                 self.progress_callback(progress)
         archive_header, file_info, total_source_size = create_archive(self._file_list, progress_callback=archive_progress_callback)
         effective_compression_level = self.compression_level
-        for file_path, _, _ in file_info:
-            if should_skip_compression(file_path, self.compression_detection_mode, self.entropy_threshold):
-                effective_compression_level = "none"
-                break
         salt = os.urandom(SALT_SIZE)
         if self.aead_algorithm == "chacha20-poly1305":
             aead_id = ALGORITHM_ID_CHACHA
@@ -704,7 +696,7 @@ class CryptoWorker:
                 raise ValueError("Incorrect password / key or corrupt file.")
             total_size = os.path.getsize(self.in_path)
             rs_codec = reedsolo.RSCodec(ecc_bytes) if recovery_enabled else None
-            max_sane_chunk_len = self.chunk_size + TAG_SIZE + 1024
+            max_sane_chunk_len = self.chunk_size + TAG_SIZE + 65536
             if is_archive and original_ext == "archive":
                 out_dir = self.output_dir or os.path.dirname(self.in_path)
                 base_filename = os.path.splitext(os.path.basename(self.in_path))[0]
