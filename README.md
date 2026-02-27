@@ -109,9 +109,9 @@ That's where **C** comes into play, with `secure_mem.c`, this forces passwords a
 ### **USB-codec**
 **USB-codec** is where you can set up a USB drive / device as your encryption and decryption method alongside a password.
 
-To do said, you'd first need to serialize a USB drive for it to be usable as a valid key; we do that by combining many unique values of the USB and hashing them together with **SHA-512**.
+To do said, you'd first need to serialize a USB drive for it to be usable as a valid key; we do that by combining many unique values of the USB and hashing them together with **Argon2ID**.
 
-This allows every USB to be "unique" and cloning it or replicating it is near impossible.
+This allows every USB to be "unique" and cloning it or replicating it is near impossible (larp).
 
 ### **Keyfile**
 A keyfile is using an individual file as your password itself, or well the `SHA` of it. Using any file as your keyfile alone is *NOT* a good practice, and is a bad security habit.
@@ -150,13 +150,6 @@ In case you wanted to know why, or not, you can skip this part. Back in version 
 
 ### *"WHAT ABOUT THE CLI?!?!?!?!?!?!?"*
 Well I mean... it's *THERE*, just... not tested actually, but it IS documented in `src/txts/cli.txt` a bit more in depth; but for most users this is just not needed.
-
-### *"Why are the `.zips` passworded on **Google Drive**?"*
-Well, the reason is it's too big to fit into a single release.
-
-*"Well you can just use git and LFS for that!!"*
-
-Yeah I use git, but I'm too lazy for the rest.
 
 ## **Disclaimer**
 **PyKryptor** is overkill. And I'm one to admit it, I'm not going to sit here and say that you *NEED* my software for every use case.
