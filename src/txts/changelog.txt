@@ -1,4 +1,5 @@
 ## changelog.txt
+## last updated: 27/02/2026 <d/m/y>
 ## scroll down for latest version
 CHANGELOGS
 
@@ -189,7 +190,7 @@ VERSION 1.7 - 10.02.2026 <d/m/y>
   c_base.py now
 - General code cleanup and stability improvements
 
-VERSION 1.8 - 18.02.2026 <d/m/y> [LATEST]
+VERSION 1.8 - 18.02.2026 <d/m/y>
 - Added gc to propely get rid of data
 - Data now streams to disk instead of hogging in
   RAM
@@ -201,5 +202,16 @@ VERSION 1.8 - 18.02.2026 <d/m/y> [LATEST]
 - Changed that pykryptor_startup.log is now a .txt,
   yes this is super important
 - Changed some dialogs / text in the main GUI
+
+VERSION 1.9 - 27.02.2026 <d/m/y> [LATEST]
+- Fixed compression not applying to all files [FATAL]
+- Fixed lag in GUI
+- Fixed typo in splash screen (oops)
+- Re-worked USB-codec (again) I promise it'S
+  safer now
+- Increased max chunk length
+- Going to the ArchiveCreationDialog now
+  hides the main GUI window
+- Added new sound effect (splash screen only)
 
 ## end
