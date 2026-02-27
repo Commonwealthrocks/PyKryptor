@@ -1,4 +1,5 @@
 ## cli.txt
+## last updated: 27/02/2026 <d/m/y>
 COMMAND LINE INTERFACE DOCUMENTATION
 
 BASIC USAGE:
