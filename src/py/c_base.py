@@ -1,5 +1,5 @@
 ## c_base.py
-## last updated: 19/02/2025 <d/m/y>
+## last updated: 27/02/2026 <d/m/y>
 ## p-y-k-x
 import ctypes 
 import os
@@ -9,18 +9,29 @@ import struct
 import sys
 from colorama import *
 
+_resource_path_cache = {}
+
 def get_resource_path(relative_path):
+    if relative_path in _resource_path_cache:
+        return _resource_path_cache[relative_path]
     candidates = []
-    if getattr(sys, "frozen", False):
+    _is_frozen = getattr(sys, "frozen", False) or getattr(sys, "__compiled__", False)
+    nuitka_temp = os.environ.get("NUITKA_ONEFILE_TEMP")
+    if nuitka_temp:
+        candidates.append(nuitka_temp)
+    try:
+        candidates.append(os.path.dirname(os.path.abspath(__file__)))
+    except Exception:
+        pass
+    if _is_frozen:
         if hasattr(sys, "_MEIPASS"):
             candidates.append(sys._MEIPASS)
         try:
-            this_file = os.path.abspath(__file__)
             first_seg = relative_path.split(os.sep)[0]
-            search = os.path.dirname(this_file)
-            for _ in range(5):  ## max 5 levels up
+            search = os.path.dirname(os.path.abspath(__file__))
+            for _ in range(5):
                 if os.path.exists(os.path.join(search, first_seg)):
-                    candidates.insert(0, search)
+                    candidates.append(search)
                     break
                 parent = os.path.dirname(search)
                 if parent == search:
@@ -28,9 +39,6 @@ def get_resource_path(relative_path):
                 search = parent
         except Exception:
             pass
-        nuitka_temp = os.environ.get("NUITKA_ONEFILE_TEMP")
-        if nuitka_temp:
-            candidates.append(nuitka_temp)
         try:
             candidates.append(os.path.dirname(os.path.abspath(sys.executable)))
         except Exception:
@@ -46,28 +54,22 @@ def get_resource_path(relative_path):
     candidates.append(os.getcwd())
     tried = []
     first_seg = relative_path.split(os.sep)[0]
+    seen = set()
     for base in candidates:
-        if not base:
+        if not base or base in seen:
             continue
+        seen.add(base)
         candidate_path = os.path.join(base, relative_path)
         tried.append(candidate_path)
         if os.path.exists(candidate_path):
+            _resource_path_cache[relative_path] = candidate_path
             return candidate_path
         if os.sep in relative_path:
             alt = os.path.join(base, first_seg, *relative_path.split(os.sep)[1:])
             tried.append(alt)
             if os.path.exists(alt):
+                _resource_path_cache[relative_path] = alt
                 return alt
-    try:
-        tempdir = tempfile.gettempdir()
-        pattern = os.path.join(tempdir, "**", first_seg)
-        for match in glob.glob(pattern, recursive=True):
-            target = os.path.join(match, *relative_path.split(os.sep)[1:]) if os.sep in relative_path else match
-            tried.append(target)
-            if os.path.exists(target):
-                return target
-    except Exception:
-        pass
     raise FileNotFoundError("Resource not found: {!r}. Tried:\n{}".format(relative_path, "\n".join(tried)))
 
 _secure_mem_lib = None
@@ -192,6 +194,6 @@ def check_aes_ni():
     return _detect_aes_ni()
 
 def aes_ni_aval():
-    return True
+    return check_aes_ni()
 
 ## end
