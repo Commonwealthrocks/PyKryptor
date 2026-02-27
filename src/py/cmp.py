@@ -1,5 +1,5 @@
 # cmp.py
-## last updated: 10/02/2026 <d/m/y>
+## last updated: 27/02/2026 <d/m/y>
 ## p-y-k-x
 import os
 import sys
@@ -93,8 +93,6 @@ def compress_chunk(data, level="none"):
     if compression_id == COMPRESSION_NONE:
         return data, compression_id        
     compressed_data = mode["func"](data)
-    if len(compressed_data) >= len(data):
-        return data, COMPRESSION_NONE
     return compressed_data, compression_id
 
 def decompress_chunk(data, compression_id):
