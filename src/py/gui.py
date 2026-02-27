@@ -1,5 +1,5 @@
 ## gui.py
-## last updated: 19/02/2026 <d/m/y>
+## last updated: 27/02/2026 <d/m/y>
 ## p-y-k-x
 import sys
 import os
@@ -72,7 +72,7 @@ stages = [
     ("Loading sound effects...", lambda: importlib.import_module("sfx")),
     ("Loading C libraries...", lambda: importlib.import_module("c_base")),
     ("Checking Argon2ID...", lambda: importlib.import_module("argon2")),
-    ("Checking password strenght meter...", lambda: importlib.import_module("zxcvbn")),]
+    ("Checking password strength meter...", lambda: importlib.import_module("zxcvbn")),]
 total_stages = len(stages)
 for index, (label, loader) in enumerate(stages, start=1):
     try:
@@ -103,6 +103,19 @@ from sfx import SoundManager
 from c_base import isca, check_aes_ni, aes_ni_aval, get_resource_path
 
 print(Fore.CYAN + "\nQuick, wasn't it?\n" + Style.RESET_ALL)
+try:
+    _sfx_path = get_resource_path(os.path.join("sfx", "quick_wasnt_it.wav"))
+    if sys.platform == "win32":
+        import winsound
+        winsound.PlaySound(_sfx_path, winsound.SND_FILENAME | winsound.SND_ASYNC | winsound.SND_NOSTOP)
+    elif sys.platform.startswith("linux"):
+        import subprocess
+        for _player in ("aplay", "paplay", "pw-play"):
+            if shutil.which(_player):
+                subprocess.Popen([_player, _sfx_path], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+                break
+except Exception:
+    pass
 
 def rm_pycache():
     cache_dirs = glob.glob(os.path.join("**", "__pycache__"), recursive=True)
@@ -537,10 +550,15 @@ class PyKryptor(QWidget):
             "chunk_size_mb": self.chunk_size_mb,
             "use_usb_key": False}
         dialog = ArchiveCreationDialog(parent=self, current_settings=current_settings)
+        self.hide()
         if dialog.exec() == QDialog.Accepted:
             archive_data = dialog.archive_data
             if archive_data:
                 self.start_archive_creation(archive_data)
+            else:
+                self.show()
+        else:
+            self.show()
 
     def start_operation(self, operation):
         files = self.files_to_process
@@ -747,6 +765,7 @@ class PyKryptor(QWidget):
         self.batch_processor.start()
 
     def on_archive_creation_finished(self, errors):
+        self.show()
         if self.progress_dialog:
             self.progress_dialog.close()
         self.encrypt_button.setEnabled(True)
