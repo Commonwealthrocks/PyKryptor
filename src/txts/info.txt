@@ -1,4 +1,5 @@
 ## info.txt
+## last updated: 27/02/2026 <d/m/y>
 TECHNICAL SPECIFICATIONS
 
 CRYPTOGRAPHIC DETAILS:
@@ -66,12 +67,11 @@ Crypto library: cryptography (Rust / C based)
 Compression: zlib, zstandard, lzma
 Compiler: Nuitka (when distributed)
 Platform: Windows based, Linux / macOS untested
-Build version: 1-9-0-2-2-0-2-6
-Version: 1.8
+Build version: 2-7-0-2-2-0-2-6
+Version: 1.9
 
 KNOWN LIMITATIONS:
 No file shredding after encryption.
 Multithreaded progress is best effort.
-Secure terminal hiding is Windows only.
 
 ## end
