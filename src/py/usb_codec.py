@@ -1,5 +1,5 @@
 ## usb_codec.py
-## last updated: 10/02/2026 <d/m/y>
+## last updated: 27/02/2026 <d/m/y>
 ## p-y-k-x
 import os
 import sys
@@ -13,6 +13,7 @@ import shutil
 import random
 import secrets
 import struct
+import base64
 from colorama import Fore, Style
 from cryptography.hazmat.primitives.ciphers.aead import AESGCM
 
@@ -22,9 +23,9 @@ DATA_FILE_MARKER = b"\x89\x50\x4B\x58"
 LEGACY_KEYFILE_NAME = ".pykryptor_keyfile"
 LEGACY_METADATA_NAME = ".pykryptor_usb_key"
 FAKE_EXTENSIONS = [".dat", ".tmp", ".sys", ".cab", ".log", ".old", ".bak", ".bin", ".chk", ".dmp", ".cache", ".idx", ".db", ".lock", ".pid", ".swp", ".swo"]
-FAKE_NAMES = ["cache", "config", "driver", "system", "temp", "update", "recovery", "data", "index", "metadata", "usr", "var", "spool", "winlog", "setup", "installer", "diagnostic", "telemetry", "sync", "backup", "restore", "journal"]
+FAKE_NAMES = ["cache", "config", "driver", "system", "temp", "update", "recovery", "data", "index", "metadata", "usr", "var", "password", "winlog", "setup", "installer", "diagnostic", "keyfile", "sync", "backup", "restore", "plain"]
 
-def _get_comprehensive_usb_fingerprint(usb_path):
+def _get_usb_fingerprint(usb_path):
     fingerprint = {}
     try:
         if sys.platform == "win32":
@@ -95,12 +96,11 @@ def _get_comprehensive_usb_fingerprint(usb_path):
                 if result.returncode == 0:
                     for line in result.stdout.split("\n"):
                         if line.startswith("ID_SERIAL="):
-                            fingerprint["device_serial"] = line.split('=', 1)[1]
+                            fingerprint["device_serial"] = line.split("=", 1)[1]
                         elif line.startswith("ID_MODEL="):
-                            fingerprint["device_model"] = line.split('=', 1)[1]
+                            fingerprint["device_model"] = line.split("=", 1)[1]
             except:
                 pass
-            
         else:
             fingerprint["path_hash"] = hashlib.sha256(usb_path.encode()).hexdigest()[:32]
     except Exception as e:
@@ -109,15 +109,30 @@ def _get_comprehensive_usb_fingerprint(usb_path):
         fingerprint["mount_point"] = usb_path
     return fingerprint
 
-def _fingerprint_to_key_material(fingerprint):
+def _fingerprint_to_key_material(fingerprint, salt=b"pykryptor_usb_static_salt"):
     sorted_items = sorted(fingerprint.items())
     combined = ""
     for key, value in sorted_items:
         combined += f"{key}:{value}|"
-    primary_hash = hashlib.sha512(combined.encode("utf-8")).digest()
-    secondary_input = primary_hash + combined.encode("utf-8")
-    secondary_hash = hashlib.sha512(secondary_input).digest()
-    return secondary_hash
+    combined_bytes = combined.encode("utf-8")
+    try:
+        from argon2.low_level import hash_secret_raw, Type
+        secondary_hash = hash_secret_raw(
+            secret=combined_bytes,
+            salt=salt,
+            time_cost=3,
+            memory_cost=65536,
+            parallelism=4,
+            hash_len=64,
+            type=Type.ID)
+        return secondary_hash
+    except ImportError:
+        primary_hash = hashlib.sha512(combined_bytes).digest()
+        secondary_input = primary_hash + combined_bytes + salt
+        secondary_hash = hashlib.sha512(secondary_input).digest()
+        if len(secondary_hash) < 64:
+             secondary_hash += hashlib.sha512(secondary_hash).digest()
+        return secondary_hash[:64]
 
 def _generate_decoy_filename():
     base = random.choice(FAKE_NAMES)
@@ -167,10 +182,18 @@ def _set_file_hidden(filepath):
             ctypes.windll.kernel32.SetFileAttributesW(filepath, 2)
         except:
             pass
+        
+_APP_SECRET = b"pykryptor_v3_meta_derive_or_something_do_not_change_ts"
+
+def _derive_meta_filenames(fingerprint, salt):
+    fp_bytes = json.dumps(fingerprint, sort_keys=True).encode("utf-8")
+    meta_name = hashlib.sha256(_APP_SECRET + b":meta:" + salt + fp_bytes).hexdigest()[:20] + ".dat"
+    key_name  = hashlib.sha256(_APP_SECRET + b":key:"  + salt + fp_bytes).hexdigest()[:20] + ".dat"
+    return meta_name, key_name
 
 def setup_usb_key(usb_path):
     try:
-        fingerprint = _get_comprehensive_usb_fingerprint(usb_path)
+        fingerprint = _get_usb_fingerprint(usb_path)
         if not fingerprint:
             raise ValueError("Could not read any USB hardware identifiers.")
         usb_uuid = fingerprint.get("serial_number") or \
@@ -187,37 +210,52 @@ def setup_usb_key(usb_path):
         data_dir = os.path.join(usb_path, HIDDEN_DIR_NAME)
         _create_hidden_directory(data_dir)
         random_key_data = os.urandom(KEYFILE_SIZE)
-        encryption_key_material = _fingerprint_to_key_material(fingerprint)
+        random_salt = os.urandom(16)
+        encryption_key_material = _fingerprint_to_key_material(fingerprint, salt=random_salt)
         encryption_key = encryption_key_material[:32]
         hmac_key = encryption_key_material[32:64]
         aesgcm = AESGCM(encryption_key)
-        nonce = os.urandom(12)
+        key_nonce = os.urandom(12)
         aad = json.dumps(fingerprint, sort_keys=True).encode("utf-8")
-        ciphertext = aesgcm.encrypt(nonce, random_key_data, aad)
-        package = DATA_FILE_MARKER + nonce + ciphertext
-        mac = hmac.new(hmac_key, package, hashlib.sha512).digest()[:32]
-        real_filename = _generate_decoy_filename()
-        real_file_path = os.path.join(data_dir, real_filename)
-        with open(real_file_path, "wb") as f:
+        key_ciphertext = aesgcm.encrypt(key_nonce, random_key_data, aad)
+        key_package = DATA_FILE_MARKER + key_nonce + key_ciphertext
+        key_mac = hmac.new(hmac_key, key_package, hashlib.sha512).digest()[:32]
+        meta_payload = json.dumps({
+            "version": 3,
+            "salt": base64.b64encode(random_salt).decode("utf-8"),
+            "created": time.time()
+        }).encode("utf-8")
+        meta_nonce = os.urandom(12)
+        meta_key_material = _fingerprint_to_key_material(fingerprint, salt=random_salt + b":meta")
+        meta_enc_key = meta_key_material[:32]
+        meta_hmac_key = meta_key_material[32:64]
+        meta_aesgcm = AESGCM(meta_enc_key)
+        meta_ciphertext = meta_aesgcm.encrypt(meta_nonce, meta_payload, aad)
+        meta_package = DATA_FILE_MARKER + meta_nonce + meta_ciphertext
+        meta_mac = hmac.new(meta_hmac_key, meta_package, hashlib.sha512).digest()[:32]
+        meta_filename, key_filename = _derive_meta_filenames(fingerprint, random_salt)
+        key_file_path = os.path.join(data_dir, key_filename)
+        with open(key_file_path, "wb") as f:
             f.write(DATA_FILE_MARKER)
-            f.write(mac)
-            f.write(nonce)
-            f.write(ciphertext)
-        _set_file_hidden(real_file_path)
-        metadata = {
-            "version": 2,
-            "real_file": real_filename,
-            "fingerprint": fingerprint,
-            "created": time.time()}
-        metadata_path = os.path.join(data_dir, "metadata.dat")
-        with open(metadata_path, "w") as f:
-            json.dump(metadata, f)
-        _set_file_hidden(metadata_path)
+            f.write(key_mac)
+            f.write(key_nonce)
+            f.write(key_ciphertext)
+        _set_file_hidden(key_file_path)
+        meta_file_path = os.path.join(data_dir, meta_filename)
+        with open(meta_file_path, "wb") as f:
+            f.write(DATA_FILE_MARKER)
+            f.write(meta_mac)
+            f.write(meta_nonce)
+            f.write(meta_ciphertext)
+            f.write(b":SALT:")
+            f.write(random_salt)
+        _set_file_hidden(meta_file_path)
         try:
             num_decoys = random.randint(15, 25)
+            existing = {key_filename, meta_filename}
             for _ in range(num_decoys):
                 decoy_filename = _generate_decoy_filename()
-                if decoy_filename == real_filename:
+                if decoy_filename in existing:
                     continue
                 decoy_path = os.path.join(data_dir, decoy_filename)
                 size = random.randint(128, 8192)
@@ -227,68 +265,94 @@ def setup_usb_key(usb_path):
                 _set_file_hidden(decoy_path)
         except Exception:
             pass
-        usb_key_hash = hashlib.sha256(random_key_data).digest()
-        return usb_key_hash, usb_uuid
+        return random_key_data, usb_uuid
     except Exception as e:
         raise ValueError(f"Failed to setup USB key: {str(e)}")
 
 def get_usb_key(usb_path):
     try:
         data_dir = os.path.join(usb_path, HIDDEN_DIR_NAME)
-        metadata_path = os.path.join(data_dir, "metadata.dat")
-        if not os.path.exists(metadata_path):
+        if not os.path.exists(data_dir):
             raise ValueError("USB key data not found (not initialized or corrupted).")
-        with open(metadata_path, "r") as f:
-            metadata = json.load(f)
-        real_filename = metadata.get("real_file")
-        stored_fingerprint = metadata.get("fingerprint", {})
-        if not real_filename:
-            raise ValueError("USB key metadata corrupted.")
-        real_file_path = os.path.join(data_dir, real_filename)
-        if not os.path.exists(real_file_path):
-            raise ValueError("USB key file not found (may have been deleted).")
-        current_fingerprint = _get_comprehensive_usb_fingerprint(usb_path)
+        current_fingerprint = _get_usb_fingerprint(usb_path)
         if not current_fingerprint:
             raise ValueError("Could not read USB hardware identifiers.")
-        matching_fields = 0
-        total_fields = 0
-        for key in stored_fingerprint:
-            if key in current_fingerprint:
-                total_fields += 1
-                if stored_fingerprint[key] == current_fingerprint[key]:
-                    matching_fields += 1
-        if total_fields == 0 or (matching_fields / total_fields) < 0.75:
+        random_salt = None
+        meta_filename_found = None
+        for fname in os.listdir(data_dir):
+            fpath = os.path.join(data_dir, fname)
+            try:
+                with open(fpath, "rb") as f:
+                    raw = f.read()
+                sep = b":SALT:"
+                idx = raw.rfind(sep)
+                if idx != -1 and raw[:4] == DATA_FILE_MARKER:
+                    candidate_salt = raw[idx + len(sep):]
+                    if len(candidate_salt) == 16:
+                        random_salt = candidate_salt
+                        meta_filename_found = fname
+                        break
+            except Exception:
+                continue
+        if random_salt is None:
+            raise ValueError("USB key data not found (metadata blob missing or corrupted).")
+        meta_filename, key_filename = _derive_meta_filenames(current_fingerprint, random_salt)
+        if meta_filename_found != meta_filename:
             raise ValueError("Hardware fingerprint mismatch; this USB-codec does not belong to this specific drive.")
-        encryption_key_material = _fingerprint_to_key_material(stored_fingerprint)
+        meta_file_path = os.path.join(data_dir, meta_filename)
+        meta_key_material = _fingerprint_to_key_material(current_fingerprint, salt=random_salt + b":meta")
+        meta_enc_key = meta_key_material[:32]
+        meta_hmac_key = meta_key_material[32:64]
+        aad = json.dumps(current_fingerprint, sort_keys=True).encode("utf-8")
+        with open(meta_file_path, "rb") as f:
+            raw_meta = f.read()
+        sep = b":SALT:"
+        meta_blob = raw_meta[:raw_meta.rfind(sep)]
+        marker = meta_blob[:4]
+        if marker != DATA_FILE_MARKER:
+            raise ValueError("Invalid metadata file format.")
+        stored_meta_mac = meta_blob[4:36]
+        meta_nonce = meta_blob[36:48]
+        meta_ciphertext = meta_blob[48:]
+        meta_package = DATA_FILE_MARKER + meta_nonce + meta_ciphertext
+        computed_meta_mac = hmac.new(meta_hmac_key, meta_package, hashlib.sha512).digest()[:32]
+        if not hmac.compare_digest(stored_meta_mac, computed_meta_mac):
+            raise ValueError("Metadata integrity check failed; possible tampering or wrong drive.")
+        meta_aesgcm = AESGCM(meta_enc_key)
+        try:
+            meta_payload = json.loads(meta_aesgcm.decrypt(meta_nonce, meta_ciphertext, aad).decode("utf-8"))
+        except Exception:
+            raise ValueError("Metadata decryption failed; hardware fingerprint mismatch or corrupt.")
+        key_file_path = os.path.join(data_dir, key_filename)
+        if not os.path.exists(key_file_path):
+            raise ValueError("USB key file not found (may have been deleted).")
+        encryption_key_material = _fingerprint_to_key_material(current_fingerprint, salt=random_salt)
         encryption_key = encryption_key_material[:32]
         hmac_key = encryption_key_material[32:64]
-        with open(real_file_path, "rb") as f:
-            marker = f.read(4)
-            if marker != DATA_FILE_MARKER:
+        with open(key_file_path, "rb") as f:
+            key_marker = f.read(4)
+            if key_marker != DATA_FILE_MARKER:
                 raise ValueError("Invalid key file format.")
             stored_mac = f.read(32)
-            nonce = f.read(12)
-            ciphertext = f.read()
-        package = marker + nonce + ciphertext
-        computed_mac = hmac.new(hmac_key, package, hashlib.sha512).digest()[:32]
+            key_nonce = f.read(12)
+            key_ciphertext = f.read()
+        key_package = DATA_FILE_MARKER + key_nonce + key_ciphertext
+        computed_mac = hmac.new(hmac_key, key_package, hashlib.sha512).digest()[:32]
         if not hmac.compare_digest(stored_mac, computed_mac):
             raise ValueError("Key file integrity check failed; possible tampering detected.")
         aesgcm = AESGCM(encryption_key)
-        aad = json.dumps(stored_fingerprint, sort_keys=True).encode("utf-8")
         try:
-            raw_key_data = aesgcm.decrypt(nonce, ciphertext, aad)
+            raw_key_data = aesgcm.decrypt(key_nonce, key_ciphertext, aad)
         except Exception:
-            raise ValueError("Decryption failed; hardware fingerprint mismatch.")
-        
+            raise ValueError("Decryption failed; hardware fingerprint mismatch or corrupt cipher.")
         if len(raw_key_data) != KEYFILE_SIZE:
             raise ValueError("Decrypted keyfile has incorrect size.")
-        usb_uuid = stored_fingerprint.get("serial_number") or \
-                   stored_fingerprint.get("uuid") or \
-                   stored_fingerprint.get("disk_serial") or \
-                   stored_fingerprint.get("path_hash") or \
+        usb_uuid = current_fingerprint.get("serial_number") or \
+                   current_fingerprint.get("uuid") or \
+                   current_fingerprint.get("disk_serial") or \
+                   current_fingerprint.get("path_hash") or \
                    hashlib.sha256(usb_path.encode()).hexdigest()[:16]
-        usb_key_hash = hashlib.sha256(raw_key_data).digest()
-        return usb_key_hash, usb_uuid
+        return raw_key_data, usb_uuid
     except FileNotFoundError:
         raise ValueError("USB key data not found")
     except json.JSONDecodeError:
@@ -330,30 +394,67 @@ def list_usb_drives():
     return usb_drives
 
 def is_usb_key_initialized(usb_path):
-    metadata_path = os.path.join(usb_path, HIDDEN_DIR_NAME, "metadata.dat")
-    return os.path.exists(metadata_path)
+    data_dir = os.path.join(usb_path, HIDDEN_DIR_NAME)
+    if not os.path.exists(data_dir):
+        return False
+    try:
+        for fname in os.listdir(data_dir):
+            fpath = os.path.join(data_dir, fname)
+            try:
+                with open(fpath, "rb") as f:
+                    raw = f.read()
+                if raw[:4] == DATA_FILE_MARKER and b":SALT:" in raw[-22:]:
+                    return True
+            except Exception:
+                continue
+    except Exception:
+        pass
+    return False
 
 def get_usb_key_info(usb_path):
     try:
-        metadata_path = os.path.join(usb_path, HIDDEN_DIR_NAME, "metadata.dat")
-        if not os.path.exists(metadata_path):
-            return None
-        with open(metadata_path, "r") as f:
-            metadata = json.load(f)
-        fingerprint = metadata.get("fingerprint", {})
-        created_timestamp = metadata.get("created", 0)
-        usb_uuid = fingerprint.get("serial_number") or \
-                   fingerprint.get("uuid") or \
-                   fingerprint.get("disk_serial") or \
-                   "Unknown"
-        created_time = time.strftime("%Y-%m-%d %H:%M:%S", time.localtime(created_timestamp))
+        raw_key, usb_uuid = get_usb_key(usb_path)
+        data_dir = os.path.join(usb_path, HIDDEN_DIR_NAME)
+        current_fingerprint = _get_usb_fingerprint(usb_path)
+        created_time = "Unknown"
+        for fname in os.listdir(data_dir):
+            fpath = os.path.join(data_dir, fname)
+            try:
+                with open(fpath, "rb") as f:
+                    raw = f.read()
+                sep = b":SALT:"
+                idx = raw.rfind(sep)
+                if idx == -1 or raw[:4] != DATA_FILE_MARKER:
+                    continue
+                candidate_salt = raw[idx + len(sep):]
+                if len(candidate_salt) != 16:
+                    continue
+                meta_filename, _ = _derive_meta_filenames(current_fingerprint, candidate_salt)
+                if fname != meta_filename:
+                    continue
+                meta_blob = raw[:idx]
+                meta_key_material = _fingerprint_to_key_material(current_fingerprint, salt=candidate_salt + b":meta")
+                meta_enc_key = meta_key_material[:32]
+                meta_aesgcm = AESGCM(meta_enc_key)
+                aad = json.dumps(current_fingerprint, sort_keys=True).encode("utf-8")
+                meta_nonce = meta_blob[36:48]
+                meta_ciphertext = meta_blob[48:]
+                meta_payload = json.loads(meta_aesgcm.decrypt(meta_nonce, meta_ciphertext, aad).decode("utf-8"))
+                ts = meta_payload.get("created", 0)
+                created_time = time.strftime("%Y-%m-%d %H:%M:%S", time.localtime(ts))
+                break
+            except Exception:
+                continue
         return {
             "uuid": usb_uuid,
-            "version": metadata.get("version", 2),
+            "version": 3,
             "keyfile_size": KEYFILE_SIZE,
             "created": created_time,
-            "hardware_bindings": len(fingerprint)}
-    except:
+            "hardware_bindings": len(current_fingerprint)}
+    except Exception:
         return None
+    
+def bait():
+    return 0
 
 ## end
