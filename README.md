@@ -1,161 +1,139 @@
-# **PyKryptor** - *"Can you make this readme not as terrible as before?"*
-Yeah sure thing, well new year and uh... finally locking in a bit on this project once more, so let's get started!!
+# **PyKryptor**
+Alright I get it I get it... I'll do you something better!
 
-## **About PyKryptor**
-*"What the hell even is **PyKryptor**?!?!"*; well to answer your question, **PyKryptor** is dedicated encryption software built on modern algorithms like **AES-256-GCM** and **ChaCha20-Poly1305**. Offline first, no data collection and or accounts (applies with offline first).
+## **What is PyKryptor?**
+**PyKryptor** is a file encryption tool built around modern **AEAD** algorithms, example **AES-256-GCM** and **ChaCha20-Poly1305**; with proper key derivation via **Argon2id**, compression, archive support, and USB-based authentication. It started as a joke, like most of my tools... but it turnt into something I use myself for day to day encryption.
 
-If you care about protecting your data, PyKryptor is here for you. Other tools like **Age**, **Kryptor**, or **Cryptomator** are solid too, but **PyKryptor** brings its own advantages and workflow.
+## **Why not just use WinRAR or 7-Zip?**
+Well, in all honesty those tools do fine themselves in this day and age but sophisticated encryption tools exist for a reason.
 
-## **Why use PyKryptor?**
-Ever wondered why software like **WinRAR** or **7-zip** use **AES-256-CBC** in the grand ol' 26? Yeah me too.
+One of the key selling points of mine and many other tools is that it follows an **AEAD (Authenticated Encryption with Associated Data)** algorithms those being **AES-256-GCM** and **ChaCha20-Poly1305** over **WinRAR's** or **7-zip's** **AES-256-CBC**.
 
-The software's main ideal is encryption, but it tackles other categories like compression and archives.
+Another key point in the world of encryption is the `KDF`, the apps mentioned above and some others use **PBKDF2 (Password Based Key Derivation Function 2)**. Which like `CBC` is 2000s crypto, not bad but not ideal for sensitive data. Falls weak to GPU or ASIC attacks, since each iteration is pretty lightweight.
 
-- **AEAD algorithms** > **PyKryptor** offers two authenticated encryption algorithms; **AES-256-GCM** and **ChaCha20-Poly1305**. Both protect your data and verify integrity.  
-- **Key derivation function / hashing** > **PyKryptor** uses **PBKDF2** or **Argon2ID** for its password hashing, **Argon2ID** is preferred since it counters most GPU based attacks too.
-- **Archive mode** > Combine multiple files or folders into a single encrypted archive, similar to how traditional archive tools work.
-- **MIT license** > Open source and free. You can even fork **PyKryptor** and become the new head dev. And any retarded actions you do are ON you. `¯\_(ツ)_/¯`
-- **Offline first** > You'd be surprised how many apps don't offer this... cough cough... **AxCrypt**... but **PyKryptor** is fully offline and it's as simple as running the `.exe` to get started.
-- **Configuration** > As for configuration, **PyKryptor** offers configuration of just about... anything in the app, from the **AEAD**, the **KDF** and so on.
+**PyKryptor** and a decent amount of other tools use **Argon2ID**, which is a much more modern hashing algorithm, winner of the "**Password Hashing Competition**" in 2015, it provides resistance against GPU, CPU and ASIC based attacks.
 
-That's the *short* run down of most of it... there's a lot I can and shall talk about.
+### **Why `GCM` over `CBC`?**
+**AES-256-CBC** was established back in 2001. Now that isn't the point however the key issue is that its NOT an **AEAD**, but what does **AEAD** even mean in terms of encryption?
 
-## **For YOU.**
+**AEAD** is basically what provides your file(s) or data confidentiality, authenticity by combining encryption and a **message authentication code (MAC)** into a single process.
 
-A few things to keep in mind for when using my app and or software.
+**CBC** falls short to this because its data can be tampered, flipped, or is weak to padding attacks. **PyKryptor** uses **AES-256-GCM** and **ChaCha20-Poly1305**; both **AEAD**, so tampering is caught on decryption. Every. Fucking. Time.
 
-### **Bugs**
-I've done to the most of my ability with catching and fixing bugs, and core breaking ones are very rare. But always keep in mind on what can and cannot go wrong.
+## **Why PyKryptor over [insert_any_tool_or_sum]?**
+Well, I won't sit here and say that my tool is better. Each one has its own set of tradeoffs.
 
-### **Update schedule**
-As a solo developer. It takes a good while to make these ideas and or code them up, especially with life being life, updates sometimes can be small and or slow...
+### **"I just want to zip up files, and encryption is not super important to me."**
+In that case, I recommend you use tools like...
 
-### **Passwords**
-Now actually related with the software, this is *WHAT* determines your care for your files. No matter how strong **AES-256-GCM** and **Argon2ID** or whatever may be. It is always recommended to put a STRONG password for sensitive information
+- **7-zip**; open source, has many forks for almost each specific need.
+- **WinRAR**; closed source, slightly worse compression ratios and encryption.
+- **PeaZip**; open source like **7-zip** with the factor that it has an option for **AES-256-GCM** too, however the `EAX` mode is used by default.
 
-Since a weak password renders all of that cryptography as just fancy **Base64**.
+### **"I want to share encrypted files with people who aren't nerds."**
+Ouch, anyways. For this **PyKryptor** too isn't really recommended, and you should try the following...
 
-### **Compatability**
-So far, only **Windows 10** and **11**, **Linux** *MIGHT* or might not work... God only knows. And any other OS like **macOS** is very unsupported.
+- **Cryptomator**; pretty dead simple to use. You can directly upload to almost any cloud service and share with anyone, and is too open source on **GitHub**. And strangely only on the desktop version you need to pay for dark mode...?
 
-### **MIT license**
-As every one of my projects for now, I assign it an **MIT license**; in other words if you do not know what it means. You are free to do *WHATEVER* ("as-is") with my code or anything under this repository.
+- **AxCrypt**; although I don't recommend the use of this for a set of reasons. However it is pretty dead simple and easy to share with others. The reason why I don't recommend this tool over **Cryptomator** is that it's paid, closed source and ties with their servers directly.
 
-In return I am not liable for any damages, data loss, or issues caused by using this software. Use it at your own risk.
+### **"I want full ass disk encryption."**
+Now none of the tools above are really made for this. So in that case you should use something like **VeraCrypt**.
 
-### **The joke.**
-Like most... no wait. All of my software. **PyKryptor** started out as a joke, and I see it as something I work on when I'm bored. That doesn't mean the software itself is *bad*, there's just a reason for some bits.
+### **"I want a CLI tool, minimal GUI."**
+For this one you have some of the best options in fact...
 
-## **List of features**
+- **age**; dead simple, does one thing and does it well. No config, no GUI, just `age -e -r <recipient> file`. If you're comfortable in a terminal and don't need archives or compression, this is probably the cleanest and easiest option out there.
 
-Now that we've gotten over the core idea of *what* this mess that I call software is. We can head onto the nerdy info.
+- **GPG**; now before you lash out at me. Yeah, **GPG** can be used as a file encryptor too in general (if used right). However it relies on keys (a public one and a private one), if you're already in the **GPG** ecosystem, zuper! If not, the learning curve probably isn't worth it just for file encryption.
 
-### **Compression**
-**PyKryptor** offers compression just like **WinRAR** and **7-zip** and so on. Not as good as said software since those are *DEDICATED* compression tools, however the rates provided still here are great and an industry standard.
+### **"I want to control ALMOST everything."**
+Finally I can shamelessly self promote my own tool. **PyKryptor** is for you if any of this sounds familiar...
 
-### **AES-256-GCM and ChaCha20-Poly1305**
-**PyKryptor** supports two encryption algorithms, both of which are **Authenticated Encryption with Associated Data** (**AEAD**). This means they don't just encrypt your data; they also detect if anyone has tampered with it.
+- You want **AEAD** encryption and actually understand why it matters.
+- You want **Argon2ID** as your `KDF`, not just **PBKDF2** slapped on by default.
+- You want compression and encryption and archiving in one tool, not three.
+- You want to actually tune your `KDF` parameters instead of hoping the defaults are good.
+- You want a USB hardware key as a second factor.
+- You want everything to stay offline, no accounts, no servers, no cloud.
+- You're on **Windows**, yeah that's it.
 
-**AES** (**Advanced Encryption Standard**) is a symmetric block cipher and the global standard for encrypting sensitive data. It's trusted enough for government classified information, so yeah, it's legit.
+If that's you, be my guest! If not, hopefully one of the tools above does the job.
 
-The `256` in **AES-256** refers to the key size; 256 bits. This gives you `2^256` possible combinations, which is such a stupidly large number that brute forcing it is computationally impossible with current technology (and will stay that way for a long long time).
+## **What about PyKryptor's features?**
+Now, the reason why you MIGHT consider using **PyKryptor** in the first place...
 
-`GCM` stands for **Galois / Counter Mode**. This is what gives AES both confidentiality (data is encrypted) and integrity (tampering is detected). If someone tries to flip bits or modify your encrypted file, `GCM` will catch it during decryption.
+### **Control**
+In **PyKryptor**, assuming you're not a fucking idiot or something. You can swap the **AEAD** algorithm, tune **Argon2ID** memory and time cost, set chunk size, pick your compression level, configure compression detection mode...
 
-**ChaCha20** is the encryption cipher, `Poly1305` is the authentication tag. Together they form an AEAD algorithm designed by **Daniel J. Bernstein** (the guy who made most of our modern crypto). Unlike **AES**, **ChaCha20** doesn't rely on hardware acceleration. It's designed to be fast in software, which makes it ideal for devices without `AES-NI` or older hardware.
+Some settings are more sensitive than other ones, make sure to read the tooltips for each one when in the app.
 
-`Poly1305` handles authentication (detecting tampering), just like `GCM` does for **AES**. So basically the same shit.
+### **AEAD algorithms only**
+Like mentioned earlier, **AES-256-GCM** and **ChaCha20-Poly1305** are the ONLY supported algorithms. Due to mentioned issues with others, I flat out refuse to add non-**AEAD** algorithms, if you want 'em; add them yourself. The app IS open source after all!
 
-Now which one should you use? Really, both are very strong and virtually have no difference except hardware that does not support `AES-NI` will run **AES-256-GCM** way worse than **ChaCha20-Poly1305**.
-
-### **Argon2ID**
-First on the agenda is **Argon2ID**, a hashing algorithm, and a winner of the **Password Hashing Competition** in 2015. **Argon2ID** is a memory / RAM intensive algorithm, so instead of only halting CPUs like **PBKDF2**, it can make most GPU farms fry themselves.
-
-`Time cost` > how many iterations (more = slower, more secure)
-
-`Memory cost` > how much RAM it consumes (more = slower, more secure).
-
-`Parallelism` > how many threads / cores to used to operate **Argon2ID**.
-
-### **PBKDF2**
-
-And the other **KDF** for **PyKryptor** is **Password Based Key Derivation Function 2** (**PBKDF2**) is the most common password hashing algorithm you'd see most software. While it can provide authentication with `HMAC`, that is already taken care of by `GCM` and `Poly1305`.
-
-While **PBKDF2** is good against CPU based attacks, on GPU / memory rich attacks it's practically useless and doesn't slow down much.
-
-The more iterations you use, the stronger / more time consuming it is to crack, it is recommended to have a default of 1 million KDFs; anything under is pretty weak-ish to a dedicated attacker.
-
-### **Salt**
-Not the ingredient but rather it gives each file a unique `16` byte **Salt** (in other words unique data). This ensures all files can't be traced to one another file and prevents identical passwords from producing identical keys to the encryption.
-
-### **What IS a KDF?**
-`KDF` is what takes your password and unique **Salt** that generates a `32` byte **AES** key to stray away as *MUCH* as possible from the original password / key. This will not save your sorry ass from weak passwords btw.
-
-### **Nonce**
-**Nonce** is usually (and in **PyKryptor**) a `12` byte unique set of data that applies per chunk. Re-using / hardcoding **Nonce** (which **PyKryptor** does NOT do) is a sure way for **AES-256-GCM** or **ChaCha20-Poly1305** to also be totally useless.
-
-With that, do not mix up **Nonce** and **Salt**, **Nonce** ensures encryption is unique per operation, even with the same key. While **Salt** is more of a hash for the *ACTUAL* file.
+### **Argon2ID and PBKDF2**
+Now I did say that **PBKDF2** is "weak" for its set of reasons. But since back when I first started making this app, it was the ONLY available `KDF` option... so still there for compatibility with older encrypted files, but **Argon2ID** is the default and what you should be using.
 
 ### **Archive mode**
-Instead of **PyKryptor** using something like `tarfile` I done made my own packer which in this case works out better for me. It allows smoother encryption flow with files.
+*"Isn't this just a knock off `.zip` format?"*, well I mean... yeah it is. However it does have its own benefits!
 
-And the improved format is resistant to **RAM exhaustion attacks and TOCTOU attacks** while keeping any and all metadata encrypted by default.
+Unlike for legacy `.zip` formats, the metadata is ALWAYS encrypted and tagged with `GCM` or `Poly1305`. Meaning that your file names AREN'T just sitting in plaintext anymore.
 
-### **Secure password wiping (optional)**
-In **Python**, you can't allocate memory as in languages like **C**, this means that the garbage collector can keep sensitive data / bytearrays like passwords in your systems RAM / memory.
+And the format for the archive is designed to resist well against **TOCTOU (time of check to time of use)** and **RE (RAM Exhaustion)** attacks and or path traversal vulnerabilities.
 
-That's where **C** comes into play, with `secure_mem.c`, this forces passwords after they are used for encryption to be *WIPED* from RAM, leaving only pure zero's.
+### **Compression**
+**PyKryptor** also has compression! Just not as good as **WinRAR** or **7-zip** however it does use industry standard libraries like `lzma` (mostly deprecated), `zlib` and `zstd`; that being said you can expect still some good ass compression ratios.
 
-### **USB-codec**
-**USB-codec** is where you can set up a USB drive / device as your encryption and decryption method alongside a password.
+Oh and **PyKryptor** has a configurable "smart skipper" implemented in **C**, I'm too lazy to explain it here but you can see everything in the tooltip for that section :)
 
-To do said, you'd first need to serialize a USB drive for it to be usable as a valid key; we do that by combining many unique values of the USB and hashing them together with **Argon2ID**.
+### **Authentication methods**
+Another big selling point to **PyKryptor** is its set of authentication options; you have `password`, `password + USB-codec` and `keyfiles`.
 
-This allows every USB to be "unique" and cloning it or replicating it is near impossible (larp).
+Each one is pretty explanatory based on the names, only that `USB-codec` is binding a **USB** drive as an extra method of 2FA if you'll call it that. Also that means that EACH **USB** is unique (based on hardware data) and makes it harder to replicate... unless it gets stolen.
 
-### **Keyfile**
-A keyfile is using an individual file as your password itself, or well the `SHA` of it. Using any file as your keyfile alone is *NOT* a good practice, and is a bad security habit.
+A `keyfile` can be used standalone and is probably your best option if you're not a fan of passwords, in **PyKryptor** you can also generate a random `512` byte keyfile for usage as a `.pykx` format.
 
-Thus why; PyKryptor allows you to generate a `512` byte keyfile with `os.urandom()` + **Salt**, which is near impossible to replicate.
+Generally it is not recommended to use just any file you have sitting as a keyfile itself, so make sure they are always **PRNG** or pure **RNG**.
 
-This does mean losing this file = losing your data too, no doubt there.
+### **Always offline**
+This is pretty common in most software, but **PyKryptor** doesn't connect to the internet at ALL. Meaning you have no fear of your files being visible to me! However if your **OS** is compromised then yeah that'd be the bigger issue.
 
-## **FAQ**
-In case you'd have any *common* questions about **PyKryptor**, here are your answers.
+And with it always being offline, I don't collect any data with it, everything is purely local and never leaves your machine.
 
-### *"Is **PyKryptor** safe?"*
-It'd be ironic if my *SECURITY* tool was unsafe, but yes. **PyKryptor** is safe to use, using well known and audited cryptographic primitives.
+### **C library usage**
+As mentioned with my "smart skipper" earlier, some bits of the app are coded in pure **C** and compiled with **MinGW64 / GCC**.
 
-### *"Why does the `.exe` get flagged by my antivirus?"*
-Well, this is more common than you think with encryption software; especially since **WannaCry** came into effect.
+The other **C** library is `secure_mem.c` which just takes your password when typed in as a `bytearray()` in **Python** and zero's it out; ensuring no traces are left.
 
-Antivirus software looks for patterns, not intent itself. If an AV sees that my or any software can encrypt, edit, write, compress, archive, zero out RAM... it will assume it's ransomware.
+Besides that the rest of the app is mostly in **Python**; but I mean stuff like `cryptography` is based on `OpenSSL` and that library is made in **C** and in general it's all tied back to **C**.
 
-But if you're really paranoid, you can boot up **PyKryptor** in a sandboxed environment or in a virtual machine to test it... or throw it into **VirusTotal** ([**VirusTotal.com**](https://virustotal.com/)) and see what comes out of it.
+## **License**
+If you have a pair of functioning eyes you can see the `LICENSE` file above this file. And incase you can't tell this repo uses the **MIT** license. What that means is you can do basically ANYTHING with the code, as long as it's not my issue in the end result.
 
-### *"What happens if I forget my password or any decryption method?"*
-Well, unless your password is easily guessable or something, your files are as good as gone.
+Same applies for using my tool; if you do dumb shit then you'll be the one wearing the dunce hat.
 
-**AES-256-GCM** and **ChaCha20-Poly1305** are state of the art encryption methods, they cannot be easily cracked nor reversed. So you must *ALWAYS* make sure to keep your passwords or any keyfile / USB safe.
+## **Quick start**
+Here's a quick start guide (mostly for **Windows**) users!
 
-### *"What languages are used to make this?"*
-Well in case you couldn't see on the side of the repo for *SOME* reason. I've used **Python (3.12)** for the GUI (`PySide6`), encryption (`cryptography`), and 95% of the app in general.
+### **Download the latest version**
+Yes when I say the latest version I MEAN the latest version. Keep in mind that your **AV** might flag it or straight up delete it because they think its the next **WannaCry** or sum.
 
-For more lower level things like RAM wiping, I step down with **C** and use `gcc` as my general compiler.
+### **Make sure your OS is supported**
+When I say that, I mean that you're using at least **Windows** 10 or 11.
 
-### *"What happened to **PyLI**?"*
-In short, I changed the name from that to **PyKryptor** to fit it better, and **PyLI** sounded like some knockoff version of `PyNaCl`.
+Any other **OS** is a hit or miss... for **Linux** you'll need to manually compile and or run the app from the source. No pre-built binaries yet. And for **macOS** I am not sure if ANYTHING works; please test it if you can lmfao.
 
-In case you wanted to know why, or not, you can skip this part. Back in version `0.1a`, I used the **C** library / `.dll` for **Libsodium** itself; hence why I named it **Py**thon-**LI**bsodium. Yeah not the smartest name but it's a cool fact...
+### **Run it**
+After downloading, extracting... WHATEVER you were doing. Run the app in however way, check out the settings tab, adjust to your liking and boom you can start encrypting!
 
-### *"WHAT ABOUT THE CLI?!?!?!?!?!?!?"*
-Well I mean... it's *THERE*, just... not tested actually, but it IS documented in `src/txts/cli.txt` a bit more in depth; but for most users this is just not needed.
+## **Limitations**
+Because I'm no bad liar, **PyKryptor** has some of its own limitations.
 
-## **Disclaimer**
-**PyKryptor** is overkill. And I'm one to admit it, I'm not going to sit here and say that you *NEED* my software for every use case.
+- **Windows** is the target platform, **Linux** is best effort as said and **macOS** is pain and misery for me to obtain.
+- "The solo dev problem"; something I face is that I work on this big ass project alone while having to juggle my own mess in life.
+- Bugs, they're pretty often but I try to catch them before pushing; so far `v1.9` seems to be super bug free!
+- Not tested on ancient hardware, not that `PySide6` or whatever would work on **Windows XP**.
+- The code is not PROFESSIONALLY audited, that doesn't mean that the encryption logic is bad, it's just not tested by the ACTUAL nerds.
 
-It all depends on your use case, example something as your photos, or anything you don't see as "super critical" but still want to be sorta safe; an **AES-256-CBC** archive with **WinRAR** or **7-zip** is still stupid safe.
-
-But if you're dealing with sensitive data and or material. It's better to be overkill than careless, simple as that. **PyKryptor** is for the people who want control over *MOST* things and want transparency; that's why I made it in the first place. Even if it started out as a joke.
-
-But time will do it's effect, `CBC` won't be fullproof forever... and refusing to change from it is how stuff like data breaches happen.
+## **The Joke.**
+As it is with this tool and any tool of mine. **PyKryptor** started out as a joke; which you can see present in some bits of the app, so never be too sure of what my app may or may not contain.
