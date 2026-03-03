@@ -203,15 +203,28 @@ VERSION 1.8 - 18.02.2026 <d/m/y>
   yes this is super important
 - Changed some dialogs / text in the main GUI
 
-VERSION 1.9 - 27.02.2026 <d/m/y> [LATEST]
+VERSION 1.9 - 27.02.2026 <d/m/y>
 - Fixed compression not applying to all files [FATAL]
 - Fixed lag in GUI
 - Fixed typo in splash screen (oops)
-- Re-worked USB-codec (again) I promise it'S
+- Re-worked USB-codec (again) I promise it's
   safer now
 - Increased max chunk length
 - Going to the ArchiveCreationDialog now
   hides the main GUI window
 - Added new sound effect (splash screen only)
+
+VERSION 2.0 - 03.03.2026 <d/m/y> [LATEST]
+- Bumped format version to 11
+  (breaking change for chunk AAD binding)
+- Fixed chunk reordering attack vulnerability
+- Fixed not updating version in DebugConsole (oops²)
+- Fixed USB fingerprint brittleness with fuzzy
+  matching (70% threshold)
+- Fixed missing data to tooltip for detection mode
+- Salt can no longer be static for USB-codec keys
+- Keyfiles / USB-codec now enforce 500K PBKDF2
+  iterations; Argon2ID is unchanged
+- Removed pre-v1.7 USB-codec support
 
 ## end
