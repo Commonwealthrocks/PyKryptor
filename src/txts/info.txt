@@ -1,5 +1,5 @@
 ## info.txt
-## last updated: 27/02/2026 <d/m/y>
+## last updated: 03/03/2026 <d/m/y>
 TECHNICAL SPECIFICATIONS
 
 CRYPTOGRAPHIC DETAILS:
@@ -20,10 +20,10 @@ ULTRAKILL: zstandard level 22 (slow, best compression)
 [L] ULTRAKILL: Legacy LZMA preset 9 (REALLY damn slow)
 Auto skip: already compressed formats (jpg, mp4, etc.)
 
-FILE FORMAT STRUCTURE (v9):
+FILE FORMAT STRUCTURE (v11):
 Magic number: "PYKX\x00" (5 bytes)
 Legacy magic number: "PYLI\x00" (5 bytes)
-Format version: 10 (1 byte)
+Format version: 11 (1 byte)
 AEAD Algorithm ID: 1=AES-GCM, 2=ChaCha20 (1 byte)
 Flags: recovery data, archive mode (1 byte)
 KDF ID: 1=PBKDF2, 2=Argon2ID (1 byte)
@@ -45,16 +45,17 @@ Extracts to folder with original structure intact.
 SECURITY NOTES:
 Extension encrypted to hide file type.
 Each file gets unique salt and nonce.
-Each chunk gets unique nonce.
-AEADs provide authentication to detect tampering.
+Each chunk gets unique nonce. v11+ binds AAD to chunk index and file offset; legacy v10 uses header only AAD.
+AEADs provide authentication to detect tampering and chunk reordering.
 Password never stored, only derived key used.
 Memory cleared after key derivation to best effort (C library if available).
 Reed-Solomon error correction optional (32 bytes per chunk).
 AES-NI detection to recommend the fastest AEAD for your CPU.
 ChaCha20-Poly1305 could be replaced with XChaCha20-Poly1305; only possible with PyNaCl.
+USB-codec keys enforce fuzzy hardware matching (70% tolerance) and minimum 500k PBKDF2 iterations.
 
 PERFORMANCE:
-Multi-threaded GUI (crypto runs in background).
+Multithreaded GUI (crypto runs in background).
 Progress tracking for large files and archives.
 Batch processing support.
 Memory efficient chunked processing.
@@ -67,11 +68,11 @@ Crypto library: cryptography (Rust / C based)
 Compression: zlib, zstandard, lzma
 Compiler: Nuitka (when distributed)
 Platform: Windows based, Linux / macOS untested
-Build version: 2-7-0-2-2-0-2-6
-Version: 1.9
+Build version: 0-3-0-3-2-0-2-6
+Version: 2.0
 
 KNOWN LIMITATIONS:
 No file shredding after encryption.
-Multithreaded progress is best effort.
+Multithreaded progress is best effort (GIL).
 
 ## end
