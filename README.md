@@ -131,9 +131,9 @@ Because I'm no bad liar, **PyKryptor** has some of its own limitations.
 
 - **Windows** is the target platform, **Linux** is best effort as said and **macOS** is pain and misery for me to obtain.
 - "The solo dev problem"; something I face is that I work on this big ass project alone while having to juggle my own mess in life.
-- Bugs, they're pretty often but I try to catch them before pushing; so far `v1.9` seems to be super bug free!
+- Bugs, they're pretty often but I try to catch them before pushing; so far `v2.0` seems to be super bug free!
 - Not tested on ancient hardware, not that `PySide6` or whatever would work on **Windows XP**.
 - The code is not PROFESSIONALLY audited, that doesn't mean that the encryption logic is bad, it's just not tested by the ACTUAL nerds.
 
-## **The Joke.**
-As it is with this tool and any tool of mine. **PyKryptor** started out as a joke; which you can see present in some bits of the app, so never be too sure of what my app may or may not contain.
+## **The joke.**
+As it is with this tool and any tool of mine. **PyKryptor** started out as a joke; which you can see present in some bits of the app, so my app may contain anything... but the only thing I can promise is encryption, lot's of it.
