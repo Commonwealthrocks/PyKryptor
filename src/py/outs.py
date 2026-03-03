@@ -1,5 +1,5 @@
 ## outs.py
-## last updated: 18/02/2026 <d/m/y>
+## last updated: 03/03/2026 <d/m/y>
 ## p-y-k-x
 import os
 import time
@@ -515,7 +515,7 @@ class ArchiveCreationDialog(QDialog):
         if self.keyfile_group.isVisible():
             keyfile_path = self.main_keyfile_path_field.text().strip()
             if keyfile_path and not os.path.exists(keyfile_path):
-                keyfile_path = None # Invalid
+                keyfile_path = None
         else:
             password = self.password_field.text()
         use_usb_key = self.usb_key_checkbox.isChecked()
@@ -534,7 +534,6 @@ class ArchiveCreationDialog(QDialog):
             dialog = CustomDialog("Warning", "Uh output dir pls?", self)
             dialog.exec()
             return
-
         if use_usb_key:
             if not usb_key_path:
                 dialog = CustomDialog("Warning", "USB-codec is enabled but no USB-codec PATH selected.", self)
@@ -878,9 +877,9 @@ class DebugConsole(QDialog):
         cleared_content = buffer.raw
         self.append_text(f"Buffer content after clearing: {cleared_content}\n")
         if all(b == 0 for b in cleared_content):
-            self.append_text("Success: Buffer was successfully zeroed out.\n")
+            self.append_text("Success: buffer was successfully zeroed out.\n")
         else:
-            self.append_text("Failure: Buffer still contains data (oops)...\n")
+            self.append_text("Failure: buffer still contains data (oops)...\n")
         self.append_text("--------------------------\n")
 
     def generate_password(self, length=64, include_symbols=True):
