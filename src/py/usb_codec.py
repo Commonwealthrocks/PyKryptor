@@ -1,5 +1,5 @@
 ## usb_codec.py
-## last updated: 27/02/2026 <d/m/y>
+## last updated: 03/03/2026 <d/m/y>
 ## p-y-k-x
 import os
 import sys
@@ -109,7 +109,17 @@ def _get_usb_fingerprint(usb_path):
         fingerprint["mount_point"] = usb_path
     return fingerprint
 
-def _fingerprint_to_key_material(fingerprint, salt=b"pykryptor_usb_static_salt"):
+def _fingerprint_match(stored_fp, current_fp, threshold=0.7):
+    critical_keys = ["serial_number", "uuid", "disk_serial", "path_hash", "device_serial"]
+    keys_present = [k for k in critical_keys if k in stored_fp or k in current_fp]
+    if not keys_present:
+        return stored_fp == current_fp
+    matches = sum(1 for k in keys_present if stored_fp.get(k) == current_fp.get(k) and stored_fp.get(k))
+    return (matches / len(keys_present)) >= threshold
+
+def _fingerprint_to_key_material(fingerprint, salt):
+    if salt is None or len(salt) < 16:
+        raise ValueError("Salt must be at least 16 bytes now.")
     sorted_items = sorted(fingerprint.items())
     combined = ""
     for key, value in sorted_items:
@@ -143,12 +153,7 @@ def _generate_decoy_filename():
 def _generate_realistic_decoy_content(size):
     content = bytearray()
     if random.random() > 0.5:
-        header = struct.pack("<4sIIII", 
-                           random.choice([b"CFG\x00", b"DAT\x00", b"IDX\x00", b"LOG\x00"]),
-                           random.randint(1, 100),
-                           random.randint(0, 0xFFFFFFFF),
-                           size,
-                           random.randint(0, 0xFF))
+        header = struct.pack("<4sIIII", random.choice([b"CFG\x00", b"DAT\x00", b"IDX\x00", b"LOG\x00"]), random.randint(1, 100), random.randint(0, 0xFFFFFFFF), size, random.randint(0, 0xFF)) ## i'll prob never touch this line again anyways
         content.extend(header)
     remaining = size - len(content)
     while len(content) < size:
@@ -183,7 +188,7 @@ def _set_file_hidden(filepath):
         except:
             pass
         
-_APP_SECRET = b"pykryptor_v3_meta_derive_or_something_do_not_change_ts"
+_APP_SECRET = b"pykryptor_vWHATEVER_meta_derive_or_something_do_not_change_ts"
 
 def _derive_meta_filenames(fingerprint, salt):
     fp_bytes = json.dumps(fingerprint, sort_keys=True).encode("utf-8")
@@ -241,14 +246,15 @@ def setup_usb_key(usb_path):
             f.write(key_nonce)
             f.write(key_ciphertext)
         _set_file_hidden(key_file_path)
+        fp_json_bytes = json.dumps(fingerprint, sort_keys=True).encode("utf-8")
+        meta_prefix = struct.pack("!I", 4) + struct.pack("!H", len(random_salt)) + random_salt + struct.pack("!H", len(fp_json_bytes)) + fp_json_bytes
         meta_file_path = os.path.join(data_dir, meta_filename)
         with open(meta_file_path, "wb") as f:
             f.write(DATA_FILE_MARKER)
+            f.write(meta_prefix)
             f.write(meta_mac)
             f.write(meta_nonce)
             f.write(meta_ciphertext)
-            f.write(b":SALT:")
-            f.write(random_salt)
         _set_file_hidden(meta_file_path)
         try:
             num_decoys = random.randint(15, 25)
@@ -279,35 +285,60 @@ def get_usb_key(usb_path):
             raise ValueError("Could not read USB hardware identifiers.")
         random_salt = None
         meta_filename_found = None
+        stored_fp = None
+        meta_blob = None
         for fname in os.listdir(data_dir):
             fpath = os.path.join(data_dir, fname)
             try:
                 with open(fpath, "rb") as f:
                     raw = f.read()
+                if not raw.startswith(DATA_FILE_MARKER):
+                    continue
+                if len(raw) > 8:
+                    try:
+                        version = struct.unpack("!I", raw[4:8])[0]
+                        if version == 4:
+                            salt_len = struct.unpack("!H", raw[8:10])[0]
+                            offset = 10
+                            candidate_salt = raw[offset:offset+salt_len]
+                            offset += salt_len
+                            fp_len = struct.unpack("!H", raw[offset:offset+2])[0]
+                            offset += 2
+                            stored_fp_text = raw[offset:offset+fp_len].decode("utf-8")
+                            stored_fp = json.loads(stored_fp_text)
+                            offset += fp_len
+                            random_salt = candidate_salt
+                            meta_filename_found = fname
+                            meta_blob = raw[:4] + raw[offset:]
+                            break
+                    except Exception:
+                        pass
                 sep = b":SALT:"
                 idx = raw.rfind(sep)
-                if idx != -1 and raw[:4] == DATA_FILE_MARKER:
+                if idx != -1:
                     candidate_salt = raw[idx + len(sep):]
                     if len(candidate_salt) == 16:
                         random_salt = candidate_salt
                         meta_filename_found = fname
+                        meta_blob = raw[:idx]
                         break
             except Exception:
                 continue
         if random_salt is None:
             raise ValueError("USB key data not found (metadata blob missing or corrupted).")
-        meta_filename, key_filename = _derive_meta_filenames(current_fingerprint, random_salt)
+        if stored_fp is not None:
+            if not _fingerprint_match(stored_fp, current_fingerprint):
+                 raise ValueError("Hardware fingerprint mismatch (fuzzy match failed).")
+            effective_fingerprint = stored_fp
+        else:
+            effective_fingerprint = current_fingerprint
+        meta_filename, key_filename = _derive_meta_filenames(effective_fingerprint, random_salt)
         if meta_filename_found != meta_filename:
             raise ValueError("Hardware fingerprint mismatch; this USB-codec does not belong to this specific drive.")
-        meta_file_path = os.path.join(data_dir, meta_filename)
-        meta_key_material = _fingerprint_to_key_material(current_fingerprint, salt=random_salt + b":meta")
+        meta_key_material = _fingerprint_to_key_material(effective_fingerprint, salt=random_salt + b":meta")
         meta_enc_key = meta_key_material[:32]
         meta_hmac_key = meta_key_material[32:64]
-        aad = json.dumps(current_fingerprint, sort_keys=True).encode("utf-8")
-        with open(meta_file_path, "rb") as f:
-            raw_meta = f.read()
-        sep = b":SALT:"
-        meta_blob = raw_meta[:raw_meta.rfind(sep)]
+        aad = json.dumps(effective_fingerprint, sort_keys=True).encode("utf-8")
         marker = meta_blob[:4]
         if marker != DATA_FILE_MARKER:
             raise ValueError("Invalid metadata file format.")
@@ -326,7 +357,7 @@ def get_usb_key(usb_path):
         key_file_path = os.path.join(data_dir, key_filename)
         if not os.path.exists(key_file_path):
             raise ValueError("USB key file not found (may have been deleted).")
-        encryption_key_material = _fingerprint_to_key_material(current_fingerprint, salt=random_salt)
+        encryption_key_material = _fingerprint_to_key_material(effective_fingerprint, salt=random_salt)
         encryption_key = encryption_key_material[:32]
         hmac_key = encryption_key_material[32:64]
         with open(key_file_path, "rb") as f:
@@ -403,8 +434,11 @@ def is_usb_key_initialized(usb_path):
             try:
                 with open(fpath, "rb") as f:
                     raw = f.read()
-                if raw[:4] == DATA_FILE_MARKER and b":SALT:" in raw[-22:]:
-                    return True
+                if raw[:4] == DATA_FILE_MARKER:
+                    if len(raw) > 8 and struct.unpack("!I", raw[4:8])[0] == 4:
+                        return True
+                    if b":SALT:" in raw[-22:]:
+                        return True
             except Exception:
                 continue
     except Exception:
@@ -422,21 +456,40 @@ def get_usb_key_info(usb_path):
             try:
                 with open(fpath, "rb") as f:
                     raw = f.read()
-                sep = b":SALT:"
-                idx = raw.rfind(sep)
-                if idx == -1 or raw[:4] != DATA_FILE_MARKER:
+                if not raw.startswith(DATA_FILE_MARKER):
                     continue
-                candidate_salt = raw[idx + len(sep):]
-                if len(candidate_salt) != 16:
-                    continue
-                meta_filename, _ = _derive_meta_filenames(current_fingerprint, candidate_salt)
+                effective_fingerprint = current_fingerprint
+                meta_blob = None
+                if len(raw) > 8:
+                    try:
+                        version = struct.unpack("!I", raw[4:8])[0]
+                        if version == 4:
+                            salt_len = struct.unpack("!H", raw[8:10])[0]
+                            offset = 10
+                            candidate_salt = raw[offset:offset+salt_len]
+                            offset += salt_len
+                            fp_len = struct.unpack("!H", raw[offset:offset+2])[0]
+                            offset += 2
+                            stored_fp_text = raw[offset:offset+fp_len].decode("utf-8")
+                            effective_fingerprint = json.loads(stored_fp_text)
+                            offset += fp_len
+                            meta_blob = raw[:4] + raw[offset:]
+                    except Exception:
+                        pass
+                if meta_blob is None:
+                    sep = b":SALT:"
+                    idx = raw.rfind(sep)
+                    if idx == -1: continue
+                    candidate_salt = raw[idx + len(sep):]
+                    if len(candidate_salt) != 16: continue
+                    meta_blob = raw[:idx]
+                meta_filename, _ = _derive_meta_filenames(effective_fingerprint, candidate_salt)
                 if fname != meta_filename:
                     continue
-                meta_blob = raw[:idx]
-                meta_key_material = _fingerprint_to_key_material(current_fingerprint, salt=candidate_salt + b":meta")
+                meta_key_material = _fingerprint_to_key_material(effective_fingerprint, salt=candidate_salt + b":meta")
                 meta_enc_key = meta_key_material[:32]
                 meta_aesgcm = AESGCM(meta_enc_key)
-                aad = json.dumps(current_fingerprint, sort_keys=True).encode("utf-8")
+                aad = json.dumps(effective_fingerprint, sort_keys=True).encode("utf-8")
                 meta_nonce = meta_blob[36:48]
                 meta_ciphertext = meta_blob[48:]
                 meta_payload = json.loads(meta_aesgcm.decrypt(meta_nonce, meta_ciphertext, aad).decode("utf-8"))
