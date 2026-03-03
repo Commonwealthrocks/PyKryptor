@@ -1,5 +1,5 @@
 ## gui.py
-## last updated: 27/02/2026 <d/m/y>
+## last updated: 03/03/2026 <d/m/y>
 ## p-y-k-x
 import sys
 import os
@@ -116,6 +116,7 @@ try:
                 break
 except Exception:
     pass
+    ## print("?")
 
 def rm_pycache():
     cache_dirs = glob.glob(os.path.join("**", "__pycache__"), recursive=True)
@@ -225,7 +226,7 @@ class PyKryptor(QWidget):
 
     def init_debug_console(self):
         if self.is_admin:
-            VER = "1.6"
+            VER = "2.0" ## lowk forgot to update this since v1.6 so might as well do it now
             self.debug_console = DebugConsole(parent=self)
             print("--- PyKryptor debug console initialized (Administrator) ---")
             print(f"--- Version: {VER} ---")
@@ -980,16 +981,16 @@ class PyKryptor(QWidget):
         self.compression_combo.setToolTip("Compression level\n\nCompression makes (or tries) to make files smaller,\nif you want speed it is NOT recommended\nto use compression at all.")
         compression_layout.addRow("Compression level:", self.compression_combo)
         self.detection_mode_combo = QComboBox()
-        self.detection_mode_combo.addItems(["None (attempt all)", "Legacy (extension)", "Magic bytes", "Entropy heuristic", "Magic bytes + Entropy"])
+        self.detection_mode_combo.addItems(["None (attempt all)", "Legacy (extension)", "Magic bytes", "Entropy heuristic", "Magic bytes or Entropy"])
         self.detection_map = {
             "none": "None (attempt all)",
             "legacy": "Legacy (extension)",
             "magic": "Magic bytes",
             "entropy": "Entropy heuristic",
-            "magic+entropy": "Magic bytes + Entropy"}
+            "magic+entropy": "Magic bytes or entropy"}
         self.detection_map_rev = {v: k for k, v in self.detection_map.items()}
         self.detection_mode_combo.setCurrentText(self.detection_map.get(self.compression_detection, "Legacy (extension)"))
-        self.detection_mode_combo.setToolTip("Detection mode\n\nWe use the detection mode to check for already compressed\nfiles with PyKryptor. Each one written in C has it's own\nlittle quirks...\n\nLegacy - only checks for certain file extensions and skips\nthose when compressing.\n\nMagic bytes - we use said signatures; as used;\nto check if the file has compressed data or markings too.\n\nEntropy heuristic - samples around 8KB of a non-determined file to see if\nthe compression ratio is worth, or not.\n\nMagic bytes + Entropy - combines 2nd and 3rd methods into one, most accurate.\n\nNone - disables skipping entirely; always attempts compression.")
+        self.detection_mode_combo.setToolTip("Detection mode\n\nWe use the detection mode to check for already compressed\nfiles with PyKryptor. Each one written in C has it's own\nlittle quirks...\n\nNone - regardless of what, PyKryptor WILL try to always\ncompress any file given; if returns are good then keep,\nelse pass.\n\nLegacy - only checks for certain file extensions and skips\nthose when compressing.\n\nMagic bytes - we use said signatures; as used;\nto check if the file has compressed data or markings too.\n\nEntropy heuristic - samples around 8KB of a non-determined file to see if\nthe compression ratio is worth, or not.\n\nMagic bytes or entropy - combines 2nd and 3rd methods into one, most accurate.\n\nNone - disables skipping entirely; always attempts compression.")
         compression_layout.addRow("Detection mode:", self.detection_mode_combo)
         self.entropy_threshold_spinbox = QDoubleSpinBox()
         self.entropy_threshold_spinbox.setRange(6.0, 8.0)
