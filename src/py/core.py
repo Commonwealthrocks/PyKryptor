@@ -1,5 +1,5 @@
 ## core.py
-## last updated: 27/02/2026 <d/m/y>
+## last updated: 03/03/2026 <d/m/y>
 ## p-y-k-x
 import os
 import io
@@ -46,7 +46,7 @@ def _madvise_sequential(mm):
         pass
 
 CHUNK_SIZE = 3 * 1024 * 1024
-FORMAT_VERSION = 10
+FORMAT_VERSION = 11
 ALGORITHM_ID_AES_GCM = 1
 ALGORITHM_ID_CHACHA = 2
 KDF_ID_PBKDF2 = 1
@@ -205,7 +205,7 @@ def extract_archive_streaming(source_path, output_dir, progress_callback=None):
         progress_callback(100.0)
 
 class CryptoWorker:
-    def __init__(self, operation, in_path, out_path, password, custom_ext=None, new_name_type=None, output_dir=None, chunk_size=CHUNK_SIZE, kdf_iterations=1000000, secure_clear=False, add_recovery_data=False, compression_level="none", archive_mode=False, use_argon2=False, argon2_time_cost=ARGON2_TIME_COST, argon2_memory_cost=ARGON2_MEMORY_COST, argon2_parallelism=ARGON2_PARALLELISM, aead_algorithm="aes-gcm", pbkdf2_hash="sha256", usb_key_path=None, keyfile_path=None, progress_callback=None, compression_detection_mode="legacy", entropy_threshold=7.5, parent=None):
+    def __init__(self, operation, in_path, out_path, password, custom_ext=None, new_name_type=None, output_dir=None, chunk_size=CHUNK_SIZE, kdf_iterations=1000000, secure_clear=False, add_recovery_data=False, compression_level="none", archive_mode=False, use_argon2=False, argon2_time_cost=ARGON2_TIME_COST, argon2_memory_cost=ARGON2_MEMORY_COST, argon2_parallelism=ARGON2_PARALLELISM, aead_algorithm="aes-gcm", pbkdf2_hash="sha256", usb_key_path=None, keyfile_path=None, progress_callback=None, compression_detection_mode="legacy", entropy_threshold=7.5, parent=None): ## pep 8's BIGGEST enemy 😂😂 
         self.operation = operation
         self.in_path = in_path
         self.out_path = out_path
@@ -301,6 +301,9 @@ class CryptoWorker:
     def _derive_key(self, salt, iterations=None, kdf_type=None, pbkdf2_hash_id=None):
         if kdf_type is None:
             kdf_type = KDF_ID_ARGON2 if self.use_argon2 else KDF_ID_PBKDF2
+        if self.usb_key_path or self.keyfile_path:
+            if kdf_type == KDF_ID_PBKDF2 and (iterations is None or iterations < 500000):
+                iterations = max(iterations or 0, 500000)
         if kdf_type == KDF_ID_ARGON2 and ARGON2_AVAILABLE:
             return self._derive_key_argon2(salt)
         else:
@@ -419,7 +422,8 @@ class CryptoWorker:
                                             mode = COMPRESSION_MODES[effective_compression_level]
                                             compressed_chunk = mode["func"](bytes(mv[chunk_offset:chunk_offset + chunk_len]))
                                         chunk_nonce = os.urandom(NONCE_SIZE)
-                                        encrypted_chunk = cipher.encrypt(chunk_nonce, compressed_chunk, associated_data=header_bytes)
+                                        chunk_aad = header_bytes + struct.pack("!Q", chunk_count) + struct.pack("!Q", outfile.tell())
+                                        encrypted_chunk = cipher.encrypt(chunk_nonce, compressed_chunk, associated_data=chunk_aad)
                                         outfile.write(chunk_nonce)
                                         outfile.write(struct.pack("!I", len(encrypted_chunk)))
                                         outfile.write(encrypted_chunk)
@@ -440,7 +444,8 @@ class CryptoWorker:
                                     raise Exception("Operation canceled by user.")
                                 chunk_len = min(self.chunk_size, total_size - offset)
                                 chunk_nonce = os.urandom(NONCE_SIZE)
-                                encrypted_chunk = cipher.encrypt(chunk_nonce, bytes(mv[offset:offset + chunk_len]), associated_data=header_bytes)
+                                chunk_aad = header_bytes + struct.pack("!Q", chunk_count) + struct.pack("!Q", outfile.tell())
+                                encrypted_chunk = cipher.encrypt(chunk_nonce, bytes(mv[offset:offset + chunk_len]), associated_data=chunk_aad)
                                 outfile.write(chunk_nonce)
                                 outfile.write(struct.pack("!I", len(encrypted_chunk)))
                                 outfile.write(encrypted_chunk)
@@ -476,7 +481,8 @@ class CryptoWorker:
                         mode = COMPRESSION_MODES[effective_compression_level]
                         compressed_chunk = mode["func"](chunk)
                     chunk_nonce = os.urandom(NONCE_SIZE)
-                    encrypted_chunk = cipher.encrypt(chunk_nonce, compressed_chunk, associated_data=header_bytes)
+                    chunk_aad = header_bytes + struct.pack("!Q", chunk_count) + struct.pack("!Q", outfile.tell())
+                    encrypted_chunk = cipher.encrypt(chunk_nonce, compressed_chunk, associated_data=chunk_aad)
                     outfile.write(chunk_nonce)
                     outfile.write(struct.pack("!I", len(encrypted_chunk)))
                     outfile.write(encrypted_chunk)
@@ -561,6 +567,7 @@ class CryptoWorker:
             first_chunk = True
             final_compression_id = COMPRESSION_NONE
             processed_size = 0
+            chunk_count = 0
             max_in_flight = self.max_workers * 2
             
             def data_stream():
@@ -602,7 +609,8 @@ class CryptoWorker:
                                 mode = COMPRESSION_MODES[effective_compression_level]
                                 compressed_chunk = mode["func"](compressed_chunk)
                             chunk_nonce = os.urandom(NONCE_SIZE)
-                            encrypted_chunk = cipher.encrypt(chunk_nonce, compressed_chunk, associated_data=header_bytes)
+                            chunk_aad = header_bytes + struct.pack("!Q", chunk_count) + struct.pack("!Q", outfile.tell())
+                            encrypted_chunk = cipher.encrypt(chunk_nonce, compressed_chunk, associated_data=chunk_aad)
                             outfile.write(chunk_nonce)
                             outfile.write(struct.pack("!I", len(encrypted_chunk)))
                             outfile.write(encrypted_chunk)
@@ -610,6 +618,7 @@ class CryptoWorker:
                                 parity = rs_codec.encode(encrypted_chunk)[-ECC_BYTES:]
                                 outfile.write(parity)
                             processed_size += original_len
+                            chunk_count += 1
                             if self.progress_callback:
                                 progress = 50.0 + (processed_size / (len(archive_header) + total_source_size)) * 50.0
                                 self.progress_callback(min(100.0, progress))
@@ -627,7 +636,8 @@ class CryptoWorker:
                         mode = COMPRESSION_MODES[effective_compression_level]
                         compressed_chunk = mode["func"](chunk)
                     chunk_nonce = os.urandom(NONCE_SIZE)
-                    encrypted_chunk = cipher.encrypt(chunk_nonce, compressed_chunk, associated_data=header_bytes)
+                    chunk_aad = header_bytes + struct.pack("!Q", chunk_count) + struct.pack("!Q", outfile.tell())
+                    encrypted_chunk = cipher.encrypt(chunk_nonce, compressed_chunk, associated_data=chunk_aad)
                     outfile.write(chunk_nonce)
                     outfile.write(struct.pack("!I", len(encrypted_chunk)))
                     outfile.write(encrypted_chunk)
@@ -635,6 +645,7 @@ class CryptoWorker:
                         parity = rs_codec.encode(encrypted_chunk)[-ECC_BYTES:]
                         outfile.write(parity)
                     processed_size += len(chunk)
+                    chunk_count += 1
                     if self.progress_callback:
                         progress = 50.0 + (processed_size / (len(archive_header) + total_source_size)) * 50.0
                         self.progress_callback(min(100.0, progress))
@@ -687,7 +698,7 @@ class CryptoWorker:
             infile.seek(0)
             header_bytes = infile.read(header_end_pos)
             if requires_usb_key and not self.usb_key_path and not self.keyfile_path:
-                 raise ValueError("This file requires a Keyfile or USB Key; please provide one.")
+                 raise ValueError("This file requires a keyfile or USB-codec key; please provide one.")
             key = self._derive_key(salt, iterations=kdf_iterations, kdf_type=kdf_type, pbkdf2_hash_id=pbkdf2_hash_id)
             cipher = ChaCha20Poly1305(key) if aead_id == ALGORITHM_ID_CHACHA else AESGCM(key)
             try:
@@ -737,7 +748,7 @@ class CryptoWorker:
                     raise ValueError(f"Invalid file: chunk length {encrypted_chunk_len}b exceeds {max_sane_chunk_len}b.")
                 return (chunk_nonce, encrypted_chunk_len)
 
-            def decrypt_chunk_worker(chunk_nonce, encrypted_chunk, parity_data):
+            def decrypt_chunk_worker(chunk_nonce, encrypted_chunk, parity_data, chunk_idx, out_offset):
                 try:
                     if rs_codec and parity_data:
                         try:
@@ -746,7 +757,11 @@ class CryptoWorker:
                             encrypted_chunk = bytes(decrypted_chunk_with_parity)
                         except reedsolo.ReedSolomonError:
                             raise ValueError("File chunk is corrupt and could not be recovered.")
-                    decrypted_chunk = cipher.decrypt(chunk_nonce, encrypted_chunk, associated_data=header_bytes)
+                    if version >= 11:
+                        chunk_aad = header_bytes + struct.pack("!Q", chunk_idx) + struct.pack("!Q", out_offset)
+                    else:
+                        chunk_aad = header_bytes
+                    decrypted_chunk = cipher.decrypt(chunk_nonce, encrypted_chunk, associated_data=chunk_aad)
                     decompressed_chunk = decompress_chunk(decrypted_chunk, compression_id)
                     return decompressed_chunk
                 except InvalidTag:
@@ -760,6 +775,7 @@ class CryptoWorker:
                                 outfile_handle.close()
                                 raise Exception("Operation canceled by user.")
                             while len(pending_futures) < max_in_flight:
+                                out_offset = infile.tell()
                                 header = read_chunk_header(infile)
                                 if header is None:
                                     break
@@ -772,7 +788,7 @@ class CryptoWorker:
                                     parity_data = infile.read(ecc_bytes)
                                     if len(parity_data) != ecc_bytes:
                                         raise ValueError("Invalid file: unexpected end while reading recovery data.")
-                                future = executor.submit(decrypt_chunk_worker, chunk_nonce, encrypted_chunk, parity_data)
+                                future = executor.submit(decrypt_chunk_worker, chunk_nonce, encrypted_chunk, parity_data, chunk_count, out_offset)
                                 pending_futures.append((future, chunk_count))
                                 chunk_count += 1
                             if not pending_futures:
@@ -792,6 +808,7 @@ class CryptoWorker:
                         if self.is_canceled:
                             outfile_handle.close()
                             raise Exception("Operation canceled by user.")
+                        out_offset = infile.tell()
                         header = read_chunk_header(infile)
                         if header is None:
                             break
@@ -804,7 +821,7 @@ class CryptoWorker:
                             parity_data = infile.read(ecc_bytes)
                             if len(parity_data) != ecc_bytes:
                                 raise ValueError("Invalid file: unexpected end while reading recovery data.")
-                        decompressed_chunk = decrypt_chunk_worker(chunk_nonce, encrypted_chunk, parity_data)
+                        decompressed_chunk = decrypt_chunk_worker(chunk_nonce, encrypted_chunk, parity_data, chunk_count, out_offset)
                         outfile_handle.write(decompressed_chunk)
                         chunk_count += 1
                         del encrypted_chunk, decompressed_chunk
@@ -881,7 +898,7 @@ class CryptoWorker:
             self.argon2_memory_cost = argon2_memory_cost
             self.argon2_parallelism = argon2_parallelism
             if requires_usb_key and not self.usb_key_path and not self.keyfile_path:
-                raise ValueError("This file was encrypted with a USB key. Please provide the USB drive path.")
+                raise ValueError("This file was encrypted with a USB-codec key; please provide the USB drive path.")
             key = self._derive_key(salt, iterations=kdf_iterations, kdf_type=kdf_type, pbkdf2_hash_id=pbkdf2_hash_id)
             cipher = ChaCha20Poly1305(key) if aead_id == ALGORITHM_ID_CHACHA else AESGCM(key)
             ext_nonce = infile.read(NONCE_SIZE)
