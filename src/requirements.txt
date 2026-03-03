@@ -1,0 +1,13 @@
+argon2-cffi==0.1.10
+colorama==0.4.6
+cryptography==46.0.5
+py_cpuinfo==9.0.0
+pygame==2.6.1
+pyside6==6.10.2
+pyside6_addons==6.10.2
+pyside6_essentials==6.10.2
+pywin32==311
+reedsolo==1.7.0
+WMI==1.5.1
+zstandard==0.25.0
+zxcvbn==4.5.0
