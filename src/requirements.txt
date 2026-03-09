@@ -1,4 +1,4 @@
-argon2-cffi==0.1.10
+argon2-cffi==25.1.0
 colorama==0.4.6
 cryptography==46.0.5
 py_cpuinfo==9.0.0
