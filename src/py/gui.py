@@ -1,5 +1,5 @@
 ## gui.py
-## last updated: 03/03/2026 <d/m/y>
+## last updated: 10/03/2026 <d/m/y>
 ## p-y-k-x
 import sys
 import os
@@ -179,7 +179,7 @@ class PyKryptor(QWidget):
         enable_win_dark_mode(self)
         self.files_to_process = []
         self.custom_ext = "dat"
-        self.output_dir = ""
+        self.output_dir = "." ## r-dir
         self.new_name_type = "keep"
         self.mute_sfx = False
         self.sfx_volume = 1.0
@@ -226,12 +226,12 @@ class PyKryptor(QWidget):
 
     def init_debug_console(self):
         if self.is_admin:
-            VER = "2.0" ## lowk forgot to update this since v1.6 so might as well do it now
+            VER = "2.1" ## made sure to do it now
             self.debug_console = DebugConsole(parent=self)
             print("--- PyKryptor debug console initialized (Administrator) ---")
             print(f"--- Version: {VER} ---")
             print(f"--- Argon2ID available: {ARGON2_AVAILABLE} ---")
-            print(f"--- Secure memory C lib loaded: {isca} ---")
+            print(f"--- Secure memory C lib loaded: {isca()} ---") ## never noticed this lolz
             print(f"--- AES-NI C lib loaded: {aes_ni_aval()} ---")
             print(f"--- CPU supports AES-NI: {self.has_aes_ni} ---")
 
@@ -257,15 +257,18 @@ class PyKryptor(QWidget):
             return os.path.join(os.path.expanduser("~"), ".pykryptor", "config.json")
 
     def validate_output_dir(self):
-        if self.output_dir and not os.path.exists(self.output_dir):
-            desktop_path = os.path.join(os.path.expanduser("~"), "Desktop")
-            if not os.path.exists(desktop_path):
-                desktop_path = os.path.expanduser("~")
-            self.output_dir = desktop_path
-            self.save_settings()
-            self.play_warning_sound()
-            dialog = CustomDialog("Output directory fix", f"Your output directory was invalid and has been changed to:\n{desktop_path}\n\nThank me later :3", self)
-            dialog.exec()
+        if self.output_dir:
+            if self.output_dir == ".":
+                return
+            if not os.path.exists(self.output_dir):
+                desktop_path = os.path.join(os.path.expanduser("~"), "Desktop")
+                if not os.path.exists(desktop_path):
+                    desktop_path = os.path.expanduser("~")
+                self.output_dir = desktop_path
+                self.save_settings()
+                self.play_warning_sound()
+                dialog = CustomDialog("Output directory fix", f"Your output directory was invalid and has been changed to:\n{desktop_path}\n\nThank me later :3", self)
+                dialog.exec()
 
     def load_settings(self):
         try:
@@ -326,13 +329,16 @@ class PyKryptor(QWidget):
             json.dump(config, f, indent=4)
 
     def select_files(self):
-        file_dialog = QFileDialog()
-        file_dialog.setFileMode(QFileDialog.ExistingFiles)
-        if file_dialog.exec():
-            self.input_path_field.setText("; ".join(file_dialog.selectedFiles()))
-            self.files_to_process = file_dialog.selectedFiles()
+        files, _ = QFileDialog.getOpenFileNames(self, "Select files")
+        if files:
+            self.input_path_field.setText("; ".join(files))
+            self.files_to_process = files
     
     def dropEvent(self, event):
+        if not self.encrypt_button.isEnabled():
+            event.ignore()
+            return
+
         if event.mimeData().hasUrls():
             urls = [url.toLocalFile() for url in event.mimeData().urls()]
             valid_files = []
@@ -347,6 +353,10 @@ class PyKryptor(QWidget):
             super().dropEvent(event)
 
     def dragEnterEvent(self, event):
+        if not self.encrypt_button.isEnabled():
+            event.ignore()
+            return
+
         if event.mimeData().hasUrls():
             event.acceptProposedAction()
         else:
@@ -367,18 +377,18 @@ class PyKryptor(QWidget):
             return
         if not password:
             self.strength_bar.setValue(0)
-            self.strength_label.setText("Password strength: X")
+            self.strength_label.setText("Password strength: N/A") ## too wide here too for spaced /
             self.strength_label.setStyleSheet("color: #888888; font-size: 9pt; margin-top: 2px;")
             return
         if len(password) > 72:
             self.strength_bar.setValue(4)
-            self.strength_label.setText("Password strength: Strong")
+            self.strength_label.setText("Password strength: strong")
             self.strength_label.setStyleSheet("color: #44DD44; font-size: 9pt; margin-top: 2px;")
             return
         result = zxcvbn(password)
         score = result["score"]
         colors = ["#FF4444", "#FF8844", "#FFAA44", "#88DD44", "#44DD44"]
-        labels = ["Really?", "Weak", "Fair", "Good", "Strong"]
+        labels = ["really?", "weak", "fair", "good", "strong"]
         self.strength_bar.setValue(score)
         self.strength_bar.setStyleSheet(f"""
             QProgressBar {{
@@ -535,7 +545,7 @@ class PyKryptor(QWidget):
     def open_archive_creation_dialog(self):
         current_settings = {
             "archive_name": f"archive.{self.custom_ext}",
-            "output_dir": self.output_dir or os.path.join(os.path.expanduser("~"), "Desktop"),
+            "output_dir": self.output_dir,
             "aead_algorithm": self.aead_algorithm,
             "use_argon2": self.use_argon2,
             "pbkdf2_hash": self.pbkdf2_hash,
@@ -631,7 +641,7 @@ class PyKryptor(QWidget):
             file_paths=files,
             password=password,
             custom_ext=self.custom_ext,
-            output_dir=self.output_dir,
+            output_dir=self.output_dir if self.output_dir and self.output_dir != "." else os.path.dirname(files[0]),
             new_name_type=self.new_name_type,
             chunk_size=self.chunk_size_mb * 1024 * 1024,
             kdf_iterations=self.kdf_iterations,
@@ -663,7 +673,7 @@ class PyKryptor(QWidget):
         
         def update_batch(current, total):
             self._current_file_index = current - 1
-            # sum([:0]) == 0, so no special-case needed for the first file
+            ## sum([:0]) == 0, so no special-case needed for the first file
             self._bytes_processed_so_far = sum(self._current_file_sizes[:self._current_file_index])
             self.progress_dialog.update_batch_progress(current, total)
         
@@ -795,7 +805,6 @@ class PyKryptor(QWidget):
         output_layout.addRow("Custom extension:", self.custom_ext_field)  
         output_dir_layout = QHBoxLayout()
         self.output_dir_field = QLineEdit(self.output_dir)
-        self.output_dir_field.setReadOnly(True)
         self.output_dir_browse_button = QPushButton("Browse")
         self.output_dir_browse_button.clicked.connect(self.select_output_dir)
         output_dir_layout.addWidget(self.output_dir_field)
@@ -815,10 +824,8 @@ class PyKryptor(QWidget):
         return general_tab
     
     def select_output_dir(self):
-        dir_dialog = QFileDialog()
-        dir_dialog.setFileMode(QFileDialog.Directory)
-        if dir_dialog.exec():
-            selected_dir = dir_dialog.selectedFiles()[0]
+        selected_dir = QFileDialog.getExistingDirectory(self, "Select output folder")
+        if selected_dir:
             self.output_dir_field.setText(selected_dir)
             self.output_dir = selected_dir
 
