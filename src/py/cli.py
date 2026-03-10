@@ -1,5 +1,5 @@
 ## cli.py
-## last updated: 10/02/2026 <d/m/y>
+## last updated: 10/03/2026 <d/m/y>
 ## p-y-k-x
 import os
 import sys
@@ -28,7 +28,7 @@ class CLIState:
         self.password = None
         self.keyfile_path = None
         self.custom_ext = "dat"
-        self.output_dir = ""
+        self.output_dir = "."
         self.new_name_type = "keep"
         self.chunk_size_mb = 3
         self.kdf_iterations = 1000000
@@ -278,7 +278,7 @@ Examples:
             print(f"{Fore.CYAN}[INFO] Processing archive with {len(self.state.files)} files...{Style.RESET_ALL}")
             try:
                 out_path = None
-                if self.state.output_dir:
+                if self.state.output_dir and self.state.output_dir != ".":
                     archive_name = self.state.archive_name or f"archive.{self.state.custom_ext}"
                     out_path = os.path.join(self.state.output_dir, archive_name)
                 else:
@@ -433,8 +433,8 @@ Examples:
         except KeyboardInterrupt:
             print(f"\n{Fore.YELLOW}[CANCEL] Operation interrupted by user{Style.RESET_ALL}")
             sys.exit(3)
-            print(f"{Fore.RED}[FATAL] {str(e)}{Style.RESET_ALL}")
         except Exception as e:
+            print(f"{Fore.RED}[FATAL] {str(e)}{Style.RESET_ALL}")
             sys.exit(1)
 
 def main():
