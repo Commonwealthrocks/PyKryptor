@@ -1,5 +1,5 @@
 ## outs.py
-## last updated: 03/03/2026 <d/m/y>
+## last updated: 10/03/2026 <d/m/y>
 ## p-y-k-x
 import os
 import time
@@ -18,6 +18,7 @@ from PySide6.QtCore import Signal as pyqtSignal
 
 from sfx import SoundManager
 from c_base import get_resource_path
+from stylez import STYLE_SHEET
 try:
     from zxcvbn import zxcvbn
     ZXCVBN_AVAILABLE = True
@@ -127,11 +128,16 @@ class KeyfileGeneratorDialog(QDialog):
 
 class ArchiveCreationDialog(QDialog):
     def __init__(self, parent=None, current_settings=None):
-        super().__init__(parent)
+        super().__init__(None)
+        self.main_window = parent
+        if hasattr(parent, "sound_manager"):
+            self.sound_manager = parent.sound_manager
+            self.mute_sfx = parent.mute_sfx
         self.setWindowTitle("Create archive")
         self.setFixedSize(600, 650)
-        self.setWindowFlags(self.windowFlags() & ~Qt.WindowContextHelpButtonHint)
+        self.setWindowFlags(Qt.Window | Qt.WindowTitleHint | Qt.WindowCloseButtonHint)
         self.setAcceptDrops(True)
+        self.setStyleSheet(STYLE_SHEET)
         enable_win_dark_mode(self)
         self.archive_data = None
         self.current_settings = current_settings or {}
@@ -152,7 +158,6 @@ class ArchiveCreationDialog(QDialog):
         archive_name_layout.addWidget(self.archive_name_field)
         archive_name_layout.addWidget(self.browse_output_button)
         self.output_dir_field = QLineEdit()
-        self.output_dir_field.setReadOnly(True)
         self.output_dir_field.setPlaceholderText("Output directory...")
         output_dir = self.current_settings.get("output_dir", "")
         if output_dir:
@@ -164,12 +169,13 @@ class ArchiveCreationDialog(QDialog):
         files_layout = QVBoxLayout()
         self.files_list = QListWidget()
         self.files_list.setMaximumHeight(120)
+        self.first_selected_path = None
         files_button_layout = QHBoxLayout()
-        self.add_files_button = QPushButton("Add files")
+        self.add_files_button = QPushButton("Add file(s)")
         icon_path = get_resource_path(os.path.join("img", "add_files_img.png"))
         self.add_files_button.setIcon(QIcon(icon_path))
         self.add_files_button.clicked.connect(self.add_files)
-        self.add_folder_button = QPushButton("Add folder")
+        self.add_folder_button = QPushButton("Add folder(s)")
         icon_path = get_resource_path(os.path.join("img", "add_folder_img.png"))
         self.add_folder_button.setIcon(QIcon(icon_path))
         self.add_folder_button.clicked.connect(self.add_folder)
@@ -202,6 +208,7 @@ class ArchiveCreationDialog(QDialog):
         kdf_layout = QFormLayout(kdf_content_widget)
         kdf_tab = QScrollArea()
         kdf_tab.setWidgetResizable(True)
+        kdf_tab.setStyleSheet("QScrollArea { border: none; }")
         kdf_tab.setWidget(kdf_content_widget)
         self.use_argon2_checkbox = QCheckBox()
         try:
@@ -258,7 +265,7 @@ class ArchiveCreationDialog(QDialog):
             "legacy": "Legacy (extension)",
             "magic": "Magic bytes",
             "entropy": "Entropy heuristic",
-            "magic+entropy": "Magic bytes + Entropy"}
+            "magic+entropy": "Magic bytes + entropy"}
         current_detection = self.current_settings.get("compression_detection", "legacy")
         self.detection_mode_combo.setCurrentText(detection_map.get(current_detection, "Legacy (extension)"))
         self.detection_mode_combo.setToolTip("Detection mode\n\nWe use the detection mode to check for already compressed\nfiles with PyKryptor. Each one written in C has it's own\nlittle quirks...\n\nLegacy - only checks for certain file extensions and skips\nthose when compressing.\n\nMagic bytes - we use said signatures; as used;\nto check if the file has compressed data or markings too.\n\nEntropy heuristic - samples around 8KB of a non-determined file to see if\nthe compression ratio is worth, or not.\n\nMagic bytes + Entropy - combines 2nd and 3rd methods into one, most accurate.\n\nNone - Disables detection (attempt all); always attempts compression.")
@@ -393,7 +400,7 @@ class ArchiveCreationDialog(QDialog):
             self.auth_mode_hint.setText("Press CTRL + SHIFT + K to switch to keyfile mode")
 
     def browse_main_keyfile(self):
-        file, _ = QFileDialog.getOpenFileName(self, "Select keyfile", "", "PyKryptor keyfiles (*.pykx);;All files (*)")
+        file, _ = QFileDialog.getOpenFileName(self, "Select keyfile", "", "PyKryptor keyfiles (*.pykx);; All files (*)")
         if file:
             self.main_keyfile_path_field.setText(file)
 
@@ -416,55 +423,86 @@ class ArchiveCreationDialog(QDialog):
     def dropEvent(self, event):
         if event.mimeData().hasUrls():
             urls = [url.toLocalFile() for url in event.mimeData().urls()]
+            if urls and not getattr(self, "first_selected_path", None):
+                self.first_selected_path = urls[0]
+            new_files = []
             for url in urls:
                 if os.path.isdir(url):
                     for root, _, files in os.walk(url):
                         for name in files:
-                            file_path = os.path.join(root, name)
-                            if not self.files_list.findItems(file_path, Qt.MatchExactly):
-                                self.files_list.addItem(file_path)
+                            new_files.append(os.path.join(root, name))
                 elif os.path.isfile(url):
-                    if not self.files_list.findItems(url, Qt.MatchExactly):
-                        self.files_list.addItem(url)
+                    new_files.append(url)
+            existing = {self.files_list.item(i).text() for i in range(self.files_list.count())}
+            to_add = [f for f in new_files if f not in existing]
+            total_after = self.files_list.count() + len(to_add)
+            _RENDER_LIMIT = 5000
+            self.files_list.setUpdatesEnabled(False)
+            try:
+                if total_after > _RENDER_LIMIT:
+                    self.files_list.clear()
+                    self.files_list.addItem(f"[{total_after} files loaded; display capped to avoid lag]")
+                    self.files_list.item(0).setForeground(self.files_list.item(0).foreground())
+                    self._all_files = list(existing) + to_add
+                else:
+                    self.files_list.addItems(to_add)
+                    self._all_files = None
+            finally:
+                self.files_list.setUpdatesEnabled(True)
             event.acceptProposedAction()
         else:
             super().dropEvent(event)
 
     def browse_output_location(self):
-        dir_dialog = QFileDialog()
-        dir_dialog.setFileMode(QFileDialog.Directory)
-        if dir_dialog.exec():
-            selected_dir = dir_dialog.selectedFiles()[0]
+        selected_dir = QFileDialog.getExistingDirectory(self, "Select output folder")
+        if selected_dir:
             self.output_dir_field.setText(selected_dir)
     
     def add_files(self):
-        file_dialog = QFileDialog()
-        file_dialog.setFileMode(QFileDialog.ExistingFiles)
-        if file_dialog.exec():
-            files = file_dialog.selectedFiles()
+        files, _ = QFileDialog.getOpenFileNames(self, "Select files")
+        if files:
+            if not getattr(self, "first_selected_path", None):
+                self.first_selected_path = files[0]
             for file_path in files:
                 if self.files_list.findItems(file_path, Qt.MatchExactly):
                     continue
                 self.files_list.addItem(file_path)
     
     def add_folder(self):
-        dir_dialog = QFileDialog()
-        dir_dialog.setFileMode(QFileDialog.Directory)
-        if dir_dialog.exec():
-            folder_path = dir_dialog.selectedFiles()[0]
+        folder_path = QFileDialog.getExistingDirectory(self, "Select directory")
+        if folder_path:
+            if not getattr(self, "first_selected_path", None):
+                self.first_selected_path = folder_path
+            new_files = []
             for root, _, files in os.walk(folder_path):
                 for name in files:
-                    file_path = os.path.join(root, name)
-                    if self.files_list.findItems(file_path, Qt.MatchExactly):
-                        continue
-                    self.files_list.addItem(file_path)
+                    new_files.append(os.path.join(root, name))
+            existing = {self.files_list.item(i).text() for i in range(self.files_list.count())}
+            to_add = [f for f in new_files if f not in existing]
+            total_after = self.files_list.count() + len(to_add)
+            _RENDER_LIMIT = 5000
+            self.files_list.setUpdatesEnabled(False)
+            try:
+                if total_after > _RENDER_LIMIT:
+                    self.files_list.clear()
+                    self.files_list.addItem(f"[{total_after} files loaded; display capped to avoid lag]")
+                    self._all_files = list(existing) + to_add
+                else:
+                    self.files_list.addItems(to_add)
+                    self._all_files = None
+            finally:
+                self.files_list.setUpdatesEnabled(True)
     
     def remove_selected(self):
         for item in self.files_list.selectedItems():
             self.files_list.takeItem(self.files_list.row(item))
+        if self.files_list.count() == 0:
+            self.first_selected_path = None
 
     def clear_files(self):
         self.files_list.clear()
+        self._all_files = None
+        self.first_selected_path = None
 
     def toggle_password_visibility(self, checked):
         if checked:
@@ -480,22 +518,22 @@ class ArchiveCreationDialog(QDialog):
         if not ZXCVBN_AVAILABLE or not self.strength_label:
             return
         if not password:
-            self.strength_label.setText("Password strength: N/A")
+            self.strength_label.setText("Password strength: N/A") ## spaced / makes it look too wide
             self.strength_label.setStyleSheet("color: #888888; font-size: 9pt;")
             return
         if len(password) > 72:
-            self.strength_label.setText("Password strength: Strong")
+            self.strength_label.setText("Password strength: strong")
             self.strength_label.setStyleSheet("color: #44DD44; font-size: 9pt;")
             return
         result = zxcvbn(password)
         score = result["score"]
         colors = {
-            0: ("#FF4444", "Really?"),
-            1: ("#FF8844", "Weak"),
-            2: ("#FFAA44", "Fair"),
-            3: ("#88DD44", "Good"),
-            4: ("#44DD44", "Strong")}
-        color, label = colors.get(score, ("#FF4444", "Really?"))
+            0: ("#FF4444", "really?"),
+            1: ("#FF8844", "weak"),
+            2: ("#FFAA44", "fair"),
+            3: ("#88DD44", "good"),
+            4: ("#44DD44", "strong")}
+        color, label = colors.get(score, ("#FF4444", "really?"))
         self.strength_label.setText(f"Password strength: {label}")
         self.strength_label.setStyleSheet(f"color: {color}; font-size: 9pt;")
 
@@ -521,7 +559,7 @@ class ArchiveCreationDialog(QDialog):
         use_usb_key = self.usb_key_checkbox.isChecked()
         usb_key_path = self.usb_path_field.text().strip() if use_usb_key else None
         if not password and not keyfile_path and not usb_key_path:
-            dialog = CustomDialog("Warning", "You must provide a Password, Keyfile, or USB-codec Key.", self)
+            dialog = CustomDialog("Warning", "You must provide a password, keyfile, or USB-codec Key.", self)
             dialog.exec()
             return
         archive_name = self.archive_name_field.text().strip()
@@ -530,10 +568,22 @@ class ArchiveCreationDialog(QDialog):
             dialog.exec()
             return
         output_dir = self.output_dir_field.text().strip()
-        if not output_dir:
-            dialog = CustomDialog("Warning", "Uh output dir pls?", self)
-            dialog.exec()
-            return
+        files = []
+        if getattr(self, "_all_files", None):
+            files = self._all_files
+        else:
+            for i in range(self.files_list.count()):
+                files.append(self.files_list.item(i).text())
+                
+        if not output_dir or output_dir == ".":
+            if getattr(self, "first_selected_path", None):
+                output_dir = os.path.dirname(self.first_selected_path)
+            elif files:
+                output_dir = os.path.dirname(files[0])
+            else:
+                dialog = CustomDialog("Warning", "Uh output dir pls?", self)
+                dialog.exec()
+                return
         if use_usb_key:
             if not usb_key_path:
                 dialog = CustomDialog("Warning", "USB-codec is enabled but no USB-codec PATH selected.", self)
@@ -549,9 +599,7 @@ class ArchiveCreationDialog(QDialog):
                 dialog = CustomDialog("Error", f"Failed to verify USB: {str(e)}", self)
                 dialog.exec()
                 return
-        files = []
-        for i in range(self.files_list.count()):
-            files.append(self.files_list.item(i).text())
+
         compression_mapping = {
             "None": "none",
             "Normal (fast)": "normal",
@@ -631,10 +679,12 @@ class ProgressDialog(QDialog):
     canceled = pyqtSignal()
 
     def __init__(self, title, parent=None):
-        super().__init__(parent)
+        super().__init__(None)
+        self.main_window = parent
         self.setWindowTitle(title)
         self.setFixedSize(550, 285)
-        self.setWindowFlags(self.windowFlags() & ~Qt.WindowContextHelpButtonHint)
+        self.setWindowFlags(Qt.Window | Qt.WindowTitleHint | Qt.WindowCloseButtonHint)
+        self.setStyleSheet(STYLE_SHEET)
         enable_win_dark_mode(self)
         self._start_mono: float = 0.0
         self._last_update_mono: float = 0.0
@@ -796,7 +846,7 @@ class CustomArgon2Dialog(QDialog):
     def set_preset(self, value):
         if value >= 1048576:
             self.play_warning_sound()
-            dialog = CustomDialog("Warning", "Warning Argon2ID\n\nThis option uses one WHOLE ass gigabyte of RAM per encrypt (a single file); this option is HIGHLY not recommended if you do not have high specs.", self)
+            dialog = CustomDialog("Warning", "Warning Argon2ID\n\nThis option uses 1 whole ass GB of RAM, not recommended, highly overkill for most use cases.", self)
             result = dialog.exec()
             if result == QDialog.Accepted:
                 self.selected_value = value
@@ -810,7 +860,8 @@ class DebugConsole(QDialog):
         super().__init__(parent)
         self.parent_app = parent
         self.setWindowTitle("DBG")
-        self.setGeometry(150, 150, 600, 400)
+        self.setGeometry(150, 150, 700, 480)
+        self.setMinimumSize(500, 320)
         self.setWindowFlags(self.windowFlags() & ~Qt.WindowContextHelpButtonHint)
         layout = QVBoxLayout(self)
         self.output_view = QTextEdit()
@@ -848,13 +899,28 @@ class DebugConsole(QDialog):
             self.test_sound_effect(args)
         elif cmd == "?rand_pass":
             self.generate_password()
+        elif cmd == "?sysinfo":
+            self.show_sysinfo()
+        elif cmd == "?aes_ni":
+            self.show_aes_ni()
+        elif cmd == "?ls":
+            self.list_dir(args)
+        elif cmd == "?clear_pass":
+            self.clear_password_field()
+        elif cmd == "?ver":
+            self.show_version()
         elif cmd == "?help":
             self.append_text("\n\nAvailable commands:\n")
-            self.append_text("  ?help             - Shows this help message.\n")
-            self.append_text("  ?cls              - Clears the console.\n")
-            self.append_text("  ?chc_mem          - Tests the secure memory clearing function.\n")
-            self.append_text("  ?test_sfx [sound] - Plays a sound file (e.g., success.wav).\n")
-            self.append_text("  ?rand_pass        - Generate a cryptographic secure password with secrets.\n")
+            self.append_text("  ?help               - Shows this help message.\n")
+            self.append_text("  ?cls                - Clears the console.\n")
+            self.append_text("  ?ver                - Shows app version and build info.\n")
+            self.append_text("  ?sysinfo            - Shows system info (OS, Python, CPU, RAM).\n")
+            self.append_text("  ?aes_ni             - Shows AES-NI detection result.\n")
+            self.append_text("  ?chc_mem            - Tests the secure memory clearing function.\n")
+            self.append_text("  ?test_sfx [sound]   - Plays a sound file (e.g., success.wav).\n")
+            self.append_text("  ?rand_pass          - Generates a cryptographically secure password.\n")
+            self.append_text("  ?ls [path]          - Lists directory contents (default: cwd).\n")
+            self.append_text("  ?clear_pass         - Clears the password field in the main window.\n")
         elif cmd == "?cls":
             self.output_view.clear()
         else:
@@ -863,13 +929,13 @@ class DebugConsole(QDialog):
     def check_memory_clearing(self):
         from c_base import clear_buffer, isca
         import ctypes
-        self.append_text("\n\n--- MCT ---\n")
+        self.append_text("\n\n--- chc_mem ---\n")
         if not isca():
             self.append_text("Result: C library for secure memory clearing is NOT loaded.\n")
             self.append_text("Using fallback Python method (less secure).\n")
         else:
             self.append_text("Result: C library for secure memory clearing IS loaded.\n")
-        test_string = b"If you can read this, the memory was not cleared."
+        test_string = b"if you can read this, the memory was not cleared."
         buffer = ctypes.create_string_buffer(len(test_string))
         buffer.raw = test_string
         self.append_text(f"Original buffer content: {buffer.raw.decode("utf-8", errors="ignore")}\n")
@@ -887,10 +953,97 @@ class DebugConsole(QDialog):
         if include_symbols:
             chars += "!@#$%^&*()-_=+[]{}|;:,.<>?"
         password = "".join(secrets.choice(chars) for _ in range(length))
-        self.append_text("\n\n--- RP ---\n")
+        self.append_text("\n\n--- rand_pass ---\n")
         self.append_text(f"Random {length} char crypto password:\n")
         self.append_text(f"`{password}`\n")
         self.append_text(f"(Copypaste ADF – {len(password)} chars)\n")
+        self.append_text("--------------------------\n")
+
+    def show_sysinfo(self):
+        import platform
+        self.append_text("\n\n--- sys_info ---\n")
+        self.append_text(f"OS:         {platform.system()} {platform.release()} ({platform.version()})\n")
+        self.append_text(f"Machine:    {platform.machine()} / {platform.processor() or "unknown"}\n")
+        self.append_text(f"Python:     {sys.version}\n")
+        self.append_text(f"CPU cores:  {os.cpu_count() or "unknown"}\n")
+        try:
+            import ctypes
+            if sys.platform == "win32":
+                class MEMSTATUS(ctypes.Structure):
+                    _fields_ = [("dwLength", ctypes.c_ulong), ("dwMemoryLoad", ctypes.c_ulong), ("ullTotalPhys", ctypes.c_ulonglong), ("ullAvailPhys", ctypes.c_ulonglong), ("ullTotalPageFile", ctypes.c_ulonglong), ("ullAvailPageFile", ctypes.c_ulonglong), ("ullTotalVirtual", ctypes.c_ulonglong), ("ullAvailVirtual", ctypes.c_ulonglong), ("ullAvailExtendedVirtual", ctypes.c_ulonglong)]
+                ms = MEMSTATUS()
+                ms.dwLength = ctypes.sizeof(ms)
+                ctypes.windll.kernel32.GlobalMemoryStatusEx(ctypes.byref(ms))
+                total_gb = ms.ullTotalPhys / (1024 ** 3)
+                avail_gb = ms.ullAvailPhys / (1024 ** 3)
+                self.append_text(f"RAM:        {total_gb:.1f} GB total / {avail_gb:.1f} GB available\n")
+            elif sys.platform.startswith("linux"):
+                with open("/proc/meminfo", "r") as f:
+                    lines = f.readlines()
+                mem = {l.split(":")[0].strip(): int(l.split(":")[1].strip().split()[0]) for l in lines if ":" in l}
+                total_gb = mem.get("MemTotal", 0) / (1024 ** 2)
+                avail_gb = mem.get("MemAvailable", 0) / (1024 ** 2)
+                self.append_text(f"RAM:        {total_gb:.1f} GB total / {avail_gb:.1f} GB available\n")
+            else:
+                self.append_text("RAM:        unavailable (unsupported platform)\n")
+        except Exception as e:
+            self.append_text(f"RAM:        unavailable ({e})\n")
+        self.append_text(f"Frozen:     {getattr(sys, "frozen", False) or getattr(sys, "__compiled__", False)}\n")
+        self.append_text(f"CWD:        {os.getcwd()}\n")
+        self.append_text("--------------------------\n")
+
+    def show_aes_ni(self):
+        from c_base import aes_ni_aval
+        result = aes_ni_aval()
+        self.append_text("\n\n--- aes_ni ---\n")
+        self.append_text(f"AES-NI supported: {result}\n")
+        if result:
+            self.append_text("AES-256-GCM will use hardware acceleration on this machine.\n")
+        else:
+            self.append_text("AES-256-GCM will run in software; ChaCha20-Poly1305 may be faster here.\n")
+        self.append_text("--------------------------\n")
+
+    def list_dir(self, args):
+        path = args[0] if args else os.getcwd()
+        self.append_text(f"\n\n--- ls: {path} ---\n")
+        try:
+            entries = sorted(os.listdir(path))
+            if not entries:
+                self.append_text("(empty directory)\n")
+            for entry in entries:
+                full = os.path.join(path, entry)
+                kind = "DIR " if os.path.isdir(full) else "FILE"
+                try:
+                    size_str = f"{os.path.getsize(full):>12,} B"
+                except OSError:
+                    size_str = "          N / A"
+                self.append_text(f"  [{kind}] {size_str}  {entry}\n")
+        except Exception as e:
+            self.append_text(f"[ERROR] {e}\n")
+        self.append_text("--------------------------\n")
+
+    def clear_password_field(self):
+        self.append_text("\n\n--- CLEAR_PASS ---\n")
+        if self.parent_app and hasattr(self.parent_app, "password_field"):
+            self.parent_app.password_field.clear()
+            self.append_text("Password field cleared.\n")
+        else:
+            self.append_text("[ERROR] Could not find password field in parent window.\n")
+        self.append_text("--------------------------\n")
+
+    def show_version(self):
+        self.append_text("\n\n--- ver ---\n")
+        self.append_text("PyKryptor v2.0\n")
+        self.append_text("File format version: 11\n")
+        self.append_text(f"Platform: {sys.platform}\n")
+        from c_base import isca, aes_ni_aval
+        self.append_text(f"Secure mem lib: {"loaded" if isca() else "NOT loaded (fallback)"}\n")
+        self.append_text(f"AES-NI:         {"supported" if aes_ni_aval() else "not supported"}\n")
+        try:
+            from argon2 import PasswordHasher
+            self.append_text("Argon2ID:       available\n")
+        except ImportError:
+            self.append_text("Argon2ID:       NOT available (PBKDF2 fallback)\n")
         self.append_text("--------------------------\n")
 
     def test_sound_effect(self, args):
@@ -994,7 +1147,7 @@ class USBSetupDialog(QDialog):
             return
         usb_path = selected_items[0].data(Qt.ItemDataRole.UserRole)
         if is_usb_key_initialized(usb_path):
-            dialog = CustomDialog("Warning", "This USB is already initialized as a USB-codec.\n\nIf you want to reinitialize it, you'll need to manually delete the key files first.", self)
+            dialog = CustomDialog("Warning", "This USB is already initialized as a USB-codec.\n\nIf you want to reinitialize it, you'll need to manually delete the files in the hidden directory first.", self)
             dialog.exec()
             return
         try:
