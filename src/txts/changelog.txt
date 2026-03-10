@@ -1,5 +1,4 @@
 ## changelog.txt
-## last updated: 27/02/2026 <d/m/y>
 ## scroll down for latest version
 CHANGELOGS
 
@@ -214,7 +213,7 @@ VERSION 1.9 - 27.02.2026 <d/m/y>
   hides the main GUI window
 - Added new sound effect (splash screen only)
 
-VERSION 2.0 - 03.03.2026 <d/m/y> [LATEST]
+VERSION 2.0 - 03.03.2026 <d/m/y>
 - Bumped format version to 11
   (breaking change for chunk AAD binding)
 - Fixed chunk reordering attack vulnerability
@@ -226,5 +225,27 @@ VERSION 2.0 - 03.03.2026 <d/m/y> [LATEST]
 - Keyfiles / USB-codec now enforce 500K PBKDF2
   iterations; Argon2ID is unchanged
 - Removed pre-v1.7 USB-codec support
+
+VERSION 2.1 - 10.03.2026 <d/m/y> [LATEST]
+- Fixed ArchiveCreationDialog and ProgressDialog missing
+  from taskbar
+- Fixed adding folder(s) in ArchiveCreationDialog crashing
+  the app
+- Fixed adding file(s) in ArchiveCreationDialog crashing
+  the app
+- Fixed archive name sometimes not applying
+- Fixed detection mode always falling back to legacy
+  in ArchiveCreationDialog (inverted map)
+- Fixed duplicate browse_usb_key method in
+  ArchiveCreationDialog
+- Fixed CLI fatal errors being swallowed silently
+- Fixed dead / unreachable code in cli.py and core.py
+- Fixed KDF tab having an ugly ass border (annoyed me a lot lol)
+- Added large folder lag mitigation; file list display
+  is capped at 5K entries, actual file list unaffected
+- Added new commands to console
+- Console is now resizable
+- Output directory is no longer read only
+- Output directory can be set as . as; cir (close in range)
 
 ## end
