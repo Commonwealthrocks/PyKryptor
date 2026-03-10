@@ -1,5 +1,5 @@
 ## info.txt
-## last updated: 03/03/2026 <d/m/y>
+## last updated: 10/03/2026 <d/m/y>
 TECHNICAL SPECIFICATIONS
 
 CRYPTOGRAPHIC DETAILS:
@@ -24,7 +24,7 @@ FILE FORMAT STRUCTURE (v11):
 Magic number: "PYKX\x00" (5 bytes)
 Legacy magic number: "PYLI\x00" (5 bytes)
 Format version: 11 (1 byte)
-AEAD Algorithm ID: 1=AES-GCM, 2=ChaCha20 (1 byte)
+AEAD algorithm ID: 1=AES-GCM, 2=ChaCha20 (1 byte)
 Flags: recovery data, archive mode (1 byte)
 KDF ID: 1=PBKDF2, 2=Argon2ID (1 byte)
 Compression ID: 0-4 (1 byte)
@@ -34,7 +34,7 @@ Salt: random (16 bytes)
 Extension nonce: random (12 bytes)
 Extension length: (4 bytes)
 Encrypted extension: variable length
-Per-chunk: nonce (12) + length (4) + encrypted data + parity (if recovery)
+Per chunk: nonce (12) + length (4) + encrypted data + parity (if recovery)
 
 ARCHIVE MODE:
 Combines multiple files into single encrypted archive.
@@ -54,13 +54,6 @@ AES-NI detection to recommend the fastest AEAD for your CPU.
 ChaCha20-Poly1305 could be replaced with XChaCha20-Poly1305; only possible with PyNaCl.
 USB-codec keys enforce fuzzy hardware matching (70% tolerance) and minimum 500k PBKDF2 iterations.
 
-PERFORMANCE:
-Multithreaded GUI (crypto runs in background).
-Progress tracking for large files and archives.
-Batch processing support.
-Memory efficient chunked processing.
-"Smart" compression skipping for pre-compressed files.
-
 BUILD INFO:
 Language: Python 3.12 and C
 GUI framework: PySide6 (QtFramework6)
@@ -68,8 +61,8 @@ Crypto library: cryptography (Rust / C based)
 Compression: zlib, zstandard, lzma
 Compiler: Nuitka (when distributed)
 Platform: Windows based, Linux / macOS untested
-Build version: 0-3-0-3-2-0-2-6
-Version: 2.0
+Build version: 1-0-0-3-2-0-2-6
+Version: 2.1
 
 KNOWN LIMITATIONS:
 No file shredding after encryption.
