@@ -1,5 +1,5 @@
 # **PyKryptor**
-Alright I get it I get it... I'll do you something better!
+**AEAD, compression, Argon2ID, MIT, archiving, USB hardware binding, keyfiles...**
 
 ## **What is PyKryptor?**
 **PyKryptor** is a file encryption tool built around modern **AEAD** algorithms, example **AES-256-GCM** and **ChaCha20-Poly1305**; with proper key derivation via **Argon2id**, compression, archive support, and USB-based authentication. It started as a joke, like most of my tools... but it turnt into something I use myself for day to day encryption.
