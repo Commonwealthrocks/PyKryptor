@@ -1,5 +1,5 @@
 ## core.py
-## last updated: 03/03/2026 <d/m/y>
+## last updated: 10/03/2026 <d/m/y>
 ## p-y-k-x
 import os
 import io
@@ -311,7 +311,7 @@ class CryptoWorker:
             return self._derive_key_pbkdf2(salt, iterations, hash_algo)
 
     def encrypt_file(self):
-        if not self.archive_mode or not hasattr(self, "_file_list") or len(self._file_list) <= 1:
+        if not self.archive_mode or not hasattr(self, "_file_list"):
             return self._encrypt_single_file()
         else:
             return self._encrypt_archive()
@@ -719,7 +719,6 @@ class CryptoWorker:
                     extract_dir = f"{extract_dir}_{counter}"
                 _tmp_fd, _tmp_path = tempfile.mkstemp(suffix=".pykx_tmp", dir=out_dir)
                 outfile_handle = os.fdopen(_tmp_fd, "wb")
-                write_to_file = True
                 _is_archive_tmp = True
             else:
                 out_dir = self.output_dir or os.path.dirname(self.in_path)
@@ -728,7 +727,6 @@ class CryptoWorker:
                 if os.path.exists(out_path) and not os.path.samefile(self.in_path, out_path):
                     raise IOError(f"Output file '{os.path.basename(out_path)}' already exists.")
                 outfile_handle = open(out_path, "wb")
-                write_to_file = True
                 _is_archive_tmp = False
             infile.seek(header_end_pos)
             chunk_count = 0
@@ -929,7 +927,6 @@ class CryptoWorker:
                     extract_dir = f"{extract_dir}_{counter}"
                 _tmp_fd, _tmp_path = tempfile.mkstemp(suffix=".pykx_tmp", dir=out_dir)
                 outfile_handle = os.fdopen(_tmp_fd, "wb")
-                write_to_file = True
                 _is_archive_tmp = True
             else:
                 out_dir = self.output_dir or os.path.dirname(self.in_path)
@@ -938,7 +935,6 @@ class CryptoWorker:
                 if os.path.exists(out_path) and not os.path.samefile(self.in_path, out_path):
                     raise IOError(f"Output file '{os.path.basename(out_path)}' already exists.")
                 outfile_handle = open(out_path, "wb")
-                write_to_file = True
                 _is_archive_tmp = False
             chunk_count = 0
             max_in_flight = self.max_workers * 2
@@ -1093,7 +1089,7 @@ class BatchProcessorThread(QThread):
         self.worker = None
 
     def run(self):
-        if self.operation == "encrypt" and self.archive_mode and len(self.file_paths) > 1:
+        if self.operation == "encrypt" and self.archive_mode:
             self.batch_progress_updated.emit(1, 1)
             self.status_message.emit("Creating archive...")
             try:
